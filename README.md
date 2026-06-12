@@ -20,6 +20,7 @@ npm run dev
 | `S` / `↓` | Broms / back |
 | `A` `D` / `←` `→` | Styrning |
 | `C` | Växla kamera (chase → förarvy → översikt) |
+| `M` | Ljud av/på |
 | `R` | Börja om |
 
 ### Poäng
@@ -30,6 +31,9 @@ npm run dev
   precisionen.
 - **Tidsbonus** – ju snabbare isen är klar, desto större bonus.
 - **Krockar** – varje smäll i sargen kostar 300 poäng.
+- **Hinder** – konor som glömts kvar på isen måste rundas; att tippa en kostar
+  150 poäng. Puckar är ofarliga – de skjuts iväg glidande över isen.
+- **Rekord** – bästa resultatet sparas lokalt (localStorage).
 
 ## Teknik
 
@@ -41,6 +45,9 @@ npm run dev
 - Rinken följer IIHF-mått (60×30 m, hörnradie 8,5 m); arenan runtomkring är
   utbytbar per bana.
 - Fordonsmodellen är en enkel cykelmodell med sidledes glid för iskänslan.
+- Allt ljud syntetiseras med Web Audio – motorbrum (detunade sågtänder genom
+  lågpass, varvtal följer farten), skrapljud (bandpassat brus när skrapan är
+  nere), publiksorl, krocksmällar och måljingel. Inga ljudfiler behövs.
 
 ## Utveckling
 
@@ -50,13 +57,17 @@ npm run preview  # servera produktionsbygget lokalt
 ```
 
 `scripts/screenshot.mjs` kör spelet i headless Chromium (Playwright) och tar
-skärmdumpar till `/tmp` för visuell verifiering – starta `npm run preview`
-först.
+skärmdumpar till `/tmp` för visuell verifiering. `scripts/verify.mjs` stegar
+simulationen direkt via `__game.tick()` och testar spellogiken (konor, puckar,
+målskärm, rekord) deterministiskt. Starta `npm run preview` först; peka
+`PW_CHROMIUM_PATH` på en Chromium-binär om Playwrights egen inte är
+installerad.
 
 ## Roadmap
 
-- [ ] Ljud: motor, skrapljud, publiksorl
-- [ ] Hinder på isen (puckar, konor) och fler saker att krocka med
+- [x] Ljud: motor, skrapljud, publiksorl
+- [x] Hinder på isen (puckar, konor) och fler saker att krocka med
+- [x] Lokalt rekord (localStorage)
 - [ ] Fler arenor – från lokala ishallen till storarenan
 - [ ] Riktig zamboni-modell (GLTF) i stället för den procedurella
-- [ ] Highscores och nivåprogression
+- [ ] Nivåprogression med stigande svårighetsgrad

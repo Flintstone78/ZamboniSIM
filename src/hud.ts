@@ -9,8 +9,11 @@ export interface FinishStats {
   precisionScore: number;
   timeScore: number;
   collisionPenalty: number;
+  conePenalty: number;
   total: number;
   stars: number;
+  best: number;
+  isRecord: boolean;
 }
 
 export class Hud {
@@ -19,6 +22,7 @@ export class Hud {
   private timeValue = el('time-value');
   private precisionValue = el('precision-value');
   private collisionValue = el('collision-value');
+  private coneValue = el('cone-value');
   private scoreValue = el('score-value');
   private speedValue = el('speed-value');
   private toast = el('toast');
@@ -35,6 +39,7 @@ export class Hud {
     precision: number,
     timeSeconds: number,
     collisions: number,
+    coneHits: number,
     score: number,
     speedMs: number,
   ): void {
@@ -45,6 +50,7 @@ export class Hud {
     this.timeValue.textContent = `${m}:${s.toString().padStart(2, '0')}`;
     this.precisionValue.textContent = `${Math.round(precision * 100)}%`;
     this.collisionValue.textContent = `${collisions}`;
+    this.coneValue.textContent = `${coneHits}`;
     this.scoreValue.textContent = `${Math.max(0, Math.round(score))} p`;
     this.speedValue.textContent = `${Math.round(Math.abs(speedMs) * 3.6)}`;
   }
@@ -98,7 +104,11 @@ export class Hud {
     el('finish-precision').textContent = `+${Math.round(stats.precisionScore)}`;
     el('finish-time').textContent = `+${Math.round(stats.timeScore)}`;
     el('finish-collisions').textContent = `−${Math.round(stats.collisionPenalty)}`;
+    el('finish-cones').textContent = `−${Math.round(stats.conePenalty)}`;
     el('finish-total').textContent = `${Math.max(0, Math.round(stats.total))} p`;
+    el('finish-record').textContent = stats.isRecord
+      ? '🏆 Nytt rekord!'
+      : `Rekord: ${Math.max(0, Math.round(stats.best))} p`;
     this.finishOverlay.style.display = 'flex';
   }
 

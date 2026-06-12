@@ -9,6 +9,7 @@ import {
   SCORE_TIME_MAX,
   SCORE_TIME_PER_SECOND,
   SCORE_COLLISION_PENALTY,
+  SCORE_CONE_PENALTY,
 } from './constants';
 import { createRink } from './rink';
 import { IceResurfacer } from './ice';
@@ -16,6 +17,10 @@ import { createZamboni } from './zamboni';
 import { Vehicle, Input } from './vehicle';
 import { Hud } from './hud';
 import { createArena } from './arena';
+import { Obstacles } from './obstacles';
+import { AudioEngine } from './audio';
+
+const BEST_SCORE_KEY = 'zambonisim.best';
 
 type CameraMode = 'chase' | 'fpv' | 'top';
 const CAMERA_MODES: CameraMode[] = ['chase', 'fpv', 'top'];
@@ -28,11 +33,14 @@ export class Game {
   private zamboni = createZamboni();
   private input = new Input();
   private hud: Hud;
+  private obstacles: Obstacles;
+  private audio = new AudioEngine();
 
   private cameraMode: CameraMode = 'chase';
   private camPos = new THREE.Vector3();
   private elapsed = 0;
   private collisions = 0;
+  private coneHits = 0;
   private finished = false;
   private minimapTimer = 0;
 
@@ -55,9 +63,21 @@ export class Game {
       onCollision: (impact) => {
         if (this.finished) return;
         this.collisions++;
+        this.audio.crash(impact);
         this.hud.showToast(impact > 2.5 ? 'KRASCH! −300 p' : 'Dunk i sargen! −300 p');
       },
     });
+
+    this.obstacles = new Obstacles({
+      onConeHit: () => {
+        if (this.finished) return;
+        this.coneHits++;
+        this.audio.cone();
+        this.hud.showToast('Kona! −150 p');
+      },
+      onPuckHit: () => this.audio.puck(),
+    });
+    this.scene.add(this.obstacles.group);
 
     this.hud = new Hud(() => this.restart());
     this.input.onTap['c'] = () => {
@@ -65,6 +85,9 @@ export class Game {
       this.cameraMode = CAMERA_MODES[(i + 1) % CAMERA_MODES.length];
     };
     this.input.onTap['r'] = () => this.restart();
+    this.input.onTap['m'] = () => {
+      this.hud.showToast(this.audio.toggleMuted() ? 'Ljud av' : 'Ljud på');
+    };
 
     this.restart();
 
@@ -83,8 +106,10 @@ export class Game {
     this.ice.reset();
     // Start by the boards at one end, facing down the rink
     this.vehicle.reset(-RINK_LENGTH / 2 + 6, -RINK_WIDTH / 2 + 4, Math.PI / 2);
+    this.obstacles.reset(this.vehicle.position.x, this.vehicle.position.y);
     this.elapsed = 0;
     this.collisions = 0;
+    this.coneHits = 0;
     this.finished = false;
     this.hud.hideFinish();
     this.syncZamboni();
@@ -99,12 +124,15 @@ export class Game {
 
   /** One simulation step without rendering (also used by headless tests). */
   tick(dt: number): void {
+    let scraping = false;
     if (!this.finished) {
       this.elapsed += dt;
       this.vehicle.update(dt, this.input.throttle, this.input.steer);
+      this.obstacles.update(dt, this.vehicle.position, this.vehicle.velocity);
 
       // The conditioner only lays clean ice while rolling forwards
       if (this.vehicle.forwardSpeed > 0.3) {
+        scraping = true;
         const fwd = this.vehicle.forward;
         const bladeX = this.vehicle.position.x - fwd.x * SWATH_REAR_OFFSET;
         const bladeZ = this.vehicle.position.y - fwd.y * SWATH_REAR_OFFSET;
@@ -118,12 +146,14 @@ export class Game {
 
     this.syncZamboni();
     this.updateCamera(dt);
+    this.audio.update(this.vehicle.forwardSpeed, this.input.throttle, scraping);
 
     this.hud.update(
       Math.min(1, this.ice.coverage / COVERAGE_GOAL),
       this.ice.precision,
       this.elapsed,
       this.collisions,
+      this.coneHits,
       this.currentScore(),
       this.vehicle.forwardSpeed,
     );
@@ -145,19 +175,37 @@ export class Game {
       this.ice.precision * SCORE_PRECISION_MAX * this.ice.coverage +
       Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND) *
         this.ice.coverage -
-      this.collisions * SCORE_COLLISION_PENALTY
+      this.collisions * SCORE_COLLISION_PENALTY -
+      this.coneHits * SCORE_CONE_PENALTY
     );
   }
 
   private finish(): void {
     this.finished = true;
+    this.audio.finish();
     const coverageScore = this.ice.coverage * SCORE_COVERAGE_MAX;
     const precisionScore = this.ice.precision * SCORE_PRECISION_MAX;
     const timeScore = Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND);
     const collisionPenalty = this.collisions * SCORE_COLLISION_PENALTY;
-    const total = coverageScore + precisionScore + timeScore - collisionPenalty;
+    const conePenalty = this.coneHits * SCORE_CONE_PENALTY;
+    const total = coverageScore + precisionScore + timeScore - collisionPenalty - conePenalty;
     const stars = total >= 13000 ? 3 : total >= 10500 ? 2 : 1;
-    this.hud.showFinish({ coverageScore, precisionScore, timeScore, collisionPenalty, total, stars });
+
+    const best = Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0);
+    const isRecord = total > best;
+    if (isRecord) localStorage.setItem(BEST_SCORE_KEY, String(Math.round(total)));
+
+    this.hud.showFinish({
+      coverageScore,
+      precisionScore,
+      timeScore,
+      collisionPenalty,
+      conePenalty,
+      total,
+      stars,
+      best: Math.max(best, total),
+      isRecord,
+    });
   }
 
   private syncZamboni(): void {

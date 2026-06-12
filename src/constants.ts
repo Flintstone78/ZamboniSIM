@@ -37,9 +37,16 @@ export const GRID_ROWS = 60;
 export const COVERAGE_GOAL = 0.995; // counts as fully resurfaced
 export const REVISIT_SECONDS = 2.5; // repaint after this long counts as overlap
 
+// Obstacles left on the ice
+export const PUCK_COUNT = 6;
+export const CONE_COUNT = 4;
+export const PUCK_RADIUS = 0.12; // oversized vs a real puck for visibility
+export const CONE_RADIUS = 0.28;
+
 // Scoring
 export const SCORE_COVERAGE_MAX = 10000;
 export const SCORE_PRECISION_MAX = 2000;
 export const SCORE_TIME_MAX = 4000;
 export const SCORE_TIME_PER_SECOND = 12;
 export const SCORE_COLLISION_PENALTY = 300;
+export const SCORE_CONE_PENALTY = 150;
