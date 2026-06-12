@@ -1,13 +1,34 @@
 import * as THREE from 'three';
 import { ZAM_LENGTH, ZAM_WIDTH, SWATH_WIDTH } from './constants';
+import { loadModelInto } from './assets';
+
+// Yaw applied to the generated GLB so its nose points along local +Z
+// (depends on how the mesh generator oriented it – tuned visually).
+const MODEL_YAW = Math.PI;
 
 /**
  * Procedural low-poly zamboni, nose pointing along local +Z so it can be
- * driven with rotation.y = heading. Built from primitives for the MVP;
- * swap in a GLTF model later without touching the rest of the game.
+ * driven with rotation.y = heading. Upgrades itself to the generated GLB
+ * model from /assets when available; the primitives are the fallback.
  */
 export function createZamboni(): THREE.Group {
   const g = new THREE.Group();
+
+  loadModelInto('/assets/zamboni.glb', (model) => {
+    model.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.castShadow = true;
+    });
+    model.rotation.y = MODEL_YAW;
+    // Normalise: real-world length, centred on the axle, wheels on the ice
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    model.scale.setScalar(ZAM_LENGTH / Math.max(size.x, size.z));
+    box.setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    model.position.set(-center.x, -box.min.y, -center.z);
+    g.clear();
+    g.add(model);
+  });
   const bodyMat = new THREE.MeshStandardMaterial({ color: '#1565c0', roughness: 0.35, metalness: 0.15 });
   const darkMat = new THREE.MeshStandardMaterial({ color: '#1b1f24', roughness: 0.8 });
   const greyMat = new THREE.MeshStandardMaterial({ color: '#90a4ae', roughness: 0.5, metalness: 0.4 });

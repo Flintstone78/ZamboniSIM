@@ -12,6 +12,7 @@ import {
   FACEOFF_SPOT_X,
   FACEOFF_SPOT_Z,
 } from './constants';
+import { loadTextureInto } from './assets';
 
 /**
  * Signed distance from a point to the rounded-rectangle rink boundary.
@@ -144,6 +145,41 @@ function createMarkingsTexture(): { texture: THREE.CanvasTexture; canvas: HTMLCa
   return { texture: tex, canvas };
 }
 
+/**
+ * Vertical ribbon following the rounded-rect outline between y0 and y1,
+ * facing the rink. U is the arc length in metres, so a texture's horizontal
+ * repeat is set in real-world metres via texture.repeat.x = 1 / widthMetres.
+ */
+function perimeterBandGeometry(
+  halfL: number,
+  halfW: number,
+  r: number,
+  y0: number,
+  y1: number,
+): THREE.BufferGeometry {
+  const pts = roundedRectShape(halfL, halfW, r).getPoints(128);
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  let s = 0;
+  for (let i = 0; i < pts.length; i++) {
+    if (i > 0) s += pts[i].distanceTo(pts[i - 1]);
+    positions.push(pts[i].x, y0, pts[i].y, pts[i].x, y1, pts[i].y);
+    uvs.push(s, 0, s, 1);
+    if (i > 0) {
+      const a = (i - 1) * 2;
+      // Wound so the front face points into the rink
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 export interface Rink {
   group: THREE.Group;
   iceMaterial: THREE.MeshPhysicalMaterial;
@@ -189,6 +225,28 @@ export function createRink(): Rink {
   boards.rotation.x = -Math.PI / 2;
   boards.castShadow = true;
   group.add(boards);
+
+  // Sponsor ads on the inside of the boards (generated texture; the band
+  // stays plain white until/unless the asset loads)
+  const adMaterial = new THREE.MeshStandardMaterial({ color: '#f5f5f5', roughness: 0.5 });
+  const adBand = new THREE.Mesh(
+    perimeterBandGeometry(
+      RINK_LENGTH / 2 - 0.015,
+      RINK_WIDTH / 2 - 0.015,
+      CORNER_RADIUS - 0.015,
+      0.21,
+      BOARD_HEIGHT - 0.02,
+    ),
+    adMaterial,
+  );
+  loadTextureInto('/assets/board_ads.png', (tex) => {
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.repeat.set(1 / 10, 1); // one strip of ad panels per 10 m of boards
+    adMaterial.map = tex;
+    adMaterial.color.set('#ffffff');
+    adMaterial.needsUpdate = true;
+  });
+  group.add(adBand);
 
   // Yellow kickplate strip at the base of the boards (slightly inset ring)
   const kickOuter = roundedRectShape(RINK_LENGTH / 2 + 0.02, RINK_WIDTH / 2 + 0.02, CORNER_RADIUS + 0.02);

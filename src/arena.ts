@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RINK_LENGTH, RINK_WIDTH } from './constants';
+import { loadTextureInto } from './assets';
 
 /**
  * The surroundings: concrete apron, tiered stands, ceiling rig and lights.
@@ -29,6 +30,51 @@ export function createArena(scene: THREE.Scene): void {
   const tierDepth = 1.6;
   const tierHeight = 0.8;
 
+  // Crowd: a generated audience texture draped as a sloped plane over the
+  // tiers. Materials start invisible and fade in when the texture loads, so
+  // the stands still read as empty seating without the asset.
+  const crowdMats: THREE.MeshStandardMaterial[] = [];
+  loadTextureInto('/assets/crowd.png', (tex) => {
+    tex.wrapS = THREE.RepeatWrapping;
+    for (const mat of crowdMats) {
+      const ownTex = tex.clone();
+      ownTex.repeat.set(mat.userData.repeatX, 1);
+      mat.map = ownTex;
+      mat.visible = true;
+      mat.needsUpdate = true;
+    }
+  });
+
+  const crowdPlane = (length: number, alongX: boolean, side: 1 | -1, offset: number) => {
+    const near = offset - tierDepth / 2;
+    const far = offset + (tierCount - 1) * tierDepth + tierDepth / 2;
+    const yNear = tierHeight + 0.08;
+    const yFar = tierCount * tierHeight + 0.08;
+    const half = length / 2;
+    const corner = (along: number, d: number, y: number): [number, number, number] =>
+      alongX ? [along, y, side * d] : [side * d, y, along];
+    const positions = new Float32Array([
+      ...corner(-half, near, yNear),
+      ...corner(half, near, yNear),
+      ...corner(-half, far, yFar),
+      ...corner(half, far, yFar),
+    ]);
+    const slope = Math.hypot(far - near, yFar - yNear);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute(
+      'uv',
+      new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2),
+    );
+    geo.setIndex(side * (alongX ? 1 : -1) > 0 ? [0, 1, 2, 1, 3, 2] : [0, 2, 1, 1, 2, 3]);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, visible: false });
+    // One full texture per ~slope-width of stand keeps the figures life-sized
+    mat.userData.repeatX = Math.max(1, Math.round(length / (slope * (16 / 9))));
+    crowdMats.push(mat);
+    scene.add(new THREE.Mesh(geo, mat));
+  };
+
   const buildStand = (length: number, alongX: boolean, side: 1 | -1, offset: number) => {
     for (let i = 0; i < tierCount; i++) {
       const geo = alongX
@@ -41,6 +87,7 @@ export function createArena(scene: THREE.Scene): void {
       else m.position.set(side * dist, y, 0);
       scene.add(m);
     }
+    crowdPlane(length, alongX, side, offset);
   };
   buildStand(RINK_LENGTH + 10, true, 1, RINK_WIDTH / 2 + 4);
   buildStand(RINK_LENGTH + 10, true, -1, RINK_WIDTH / 2 + 4);
@@ -98,6 +145,14 @@ export function createArena(scene: THREE.Scene): void {
     color: '#0a1622',
     emissive: '#1c4d7a',
     emissiveIntensity: 1.4,
+  });
+  loadTextureInto('/assets/scoreboard.png', (tex) => {
+    screenMat.map = tex;
+    screenMat.color.set('#ffffff');
+    screenMat.emissive.set('#ffffff');
+    screenMat.emissiveMap = tex;
+    screenMat.emissiveIntensity = 0.9;
+    screenMat.needsUpdate = true;
   });
   for (const ry of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.9), screenMat);
