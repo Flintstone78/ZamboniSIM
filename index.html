@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZamboniSIM</title>
+    <style>
+      :root {
+        --hud-bg: rgba(10, 18, 30, 0.72);
+        --hud-border: rgba(120, 180, 255, 0.25);
+        --accent: #4fc3f7;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #05080d; }
+      body { font-family: "Segoe UI", system-ui, sans-serif; color: #e8f1fa; }
+      canvas { display: block; }
+
+      .hud {
+        position: fixed;
+        pointer-events: none;
+        user-select: none;
+      }
+      .panel {
+        background: var(--hud-bg);
+        border: 1px solid var(--hud-border);
+        border-radius: 10px;
+        padding: 10px 14px;
+        backdrop-filter: blur(4px);
+      }
+
+      #hud-progress { top: 16px; left: 16px; width: 280px; }
+      #hud-progress .label {
+        display: flex; justify-content: space-between;
+        font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase;
+        color: #9fc4e8; margin-bottom: 6px;
+      }
+      #progress-pct { color: var(--accent); font-weight: 700; }
+      #progress-bar-track {
+        height: 10px; border-radius: 5px; overflow: hidden;
+        background: rgba(255, 255, 255, 0.12);
+      }
+      #progress-bar-fill {
+        height: 100%; width: 0%;
+        background: linear-gradient(90deg, #29b6f6, #81d4fa);
+        transition: width 0.15s linear;
+      }
+      #minimap { margin-top: 10px; display: block; border-radius: 6px; width: 100%; }
+
+      #hud-stats { top: 16px; right: 16px; text-align: right; }
+      #hud-stats .row { font-size: 14px; line-height: 1.7; color: #c4d8ec; }
+      #hud-stats .value { color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+      #score-value { color: var(--accent); font-size: 20px; font-weight: 700; }
+
+      #hud-speed { bottom: 16px; left: 16px; font-size: 14px; color: #c4d8ec; }
+      #hud-speed .value { font-size: 22px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+
+      #hud-help {
+        bottom: 16px; left: 50%; transform: translateX(-50%);
+        font-size: 12.5px; color: #8fb2d4; text-align: center;
+      }
+      #hud-help kbd {
+        background: rgba(255, 255, 255, 0.14); border-radius: 4px;
+        padding: 1px 6px; font-family: inherit; color: #fff;
+      }
+
+      #toast {
+        top: 22%; left: 50%; transform: translateX(-50%);
+        font-size: 26px; font-weight: 800; color: #ff7043;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+        opacity: 0; transition: opacity 0.25s;
+      }
+
+      #finish-overlay {
+        position: fixed; inset: 0; display: none;
+        align-items: center; justify-content: center;
+        background: rgba(4, 8, 14, 0.78);
+      }
+      #finish-overlay .card {
+        background: var(--hud-bg); border: 1px solid var(--hud-border);
+        border-radius: 16px; padding: 36px 48px; text-align: center; min-width: 340px;
+      }
+      #finish-overlay h1 { font-size: 30px; margin-bottom: 4px; }
+      #finish-stars { font-size: 34px; letter-spacing: 6px; margin: 10px 0 18px; color: #ffd54f; }
+      #finish-overlay .breakdown {
+        text-align: left; font-size: 15px; color: #c4d8ec; line-height: 2;
+        margin-bottom: 22px;
+      }
+      #finish-overlay .breakdown .value { float: right; color: #fff; font-weight: 600; margin-left: 32px; }
+      #finish-total { font-size: 22px; color: var(--accent); font-weight: 800; }
+      #finish-overlay button {
+        pointer-events: auto; cursor: pointer;
+        font: inherit; font-weight: 700; font-size: 16px;
+        color: #06121f; background: var(--accent);
+        border: 0; border-radius: 8px; padding: 12px 30px;
+      }
+      #finish-overlay button:hover { filter: brightness(1.1); }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="hud-progress" class="hud panel">
+      <div class="label"><span>Spolad is</span><span id="progress-pct">0%</span></div>
+      <div id="progress-bar-track"><div id="progress-bar-fill"></div></div>
+      <canvas id="minimap" width="252" height="126"></canvas>
+    </div>
+
+    <div id="hud-stats" class="hud panel">
+      <div class="row">Tid <span class="value" id="time-value">0:00</span></div>
+      <div class="row">Precision <span class="value" id="precision-value">100%</span></div>
+      <div class="row">Krockar <span class="value" id="collision-value">0</span></div>
+      <div class="row"><span id="score-value">0</span></div>
+    </div>
+
+    <div id="hud-speed" class="hud panel">
+      <span class="value" id="speed-value">0</span> km/h
+    </div>
+
+    <div id="hud-help" class="hud">
+      <kbd>W</kbd>/<kbd>S</kbd> gas/back &nbsp; <kbd>A</kbd>/<kbd>D</kbd> styr &nbsp;
+      <kbd>C</kbd> kamera &nbsp; <kbd>R</kbd> börja om
+    </div>
+
+    <div id="toast" class="hud"></div>
+
+    <div id="finish-overlay">
+      <div class="card">
+        <h1>Isen är spolad!</h1>
+        <div id="finish-stars"></div>
+        <div class="breakdown">
+          <div>Täckning <span class="value" id="finish-coverage"></span></div>
+          <div>Precision <span class="value" id="finish-precision"></span></div>
+          <div>Tidsbonus <span class="value" id="finish-time"></span></div>
+          <div>Krockavdrag <span class="value" id="finish-collisions"></span></div>
+          <div style="margin-top:8px">Totalt <span class="value" id="finish-total"></span></div>
+        </div>
+        <button id="restart-btn">Kör igen</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

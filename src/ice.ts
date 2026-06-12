@@ -1,0 +1,252 @@
+import * as THREE from 'three';
+import {
+  RINK_LENGTH,
+  RINK_WIDTH,
+  SWATH_WIDTH,
+  GRID_COLS,
+  GRID_ROWS,
+  REVISIT_SECONDS,
+} from './constants';
+import { rinkSignedDistance } from './rink';
+
+const TEX_W = 1024;
+const TEX_H = 512;
+const ROUGH_DIRTY = 168; // canvas grey level for scuffed ice
+const ROUGH_CLEAN = 26; // freshly resurfaced = near-mirror
+
+/**
+ * Owns the "freshly resurfaced" state of the ice. Visually this is a canvas
+ * used as the ice material's roughness map (scuffed = matte, resurfaced =
+ * glossy). For scoring, a coarse grid tracks which 0.5 m cells have been
+ * painted and how often, so coverage and overlap fall out of the same data.
+ */
+export class IceResurfacer {
+  readonly texture: THREE.CanvasTexture;
+
+  private readonly ctx: CanvasRenderingContext2D;
+  private colorTexture: THREE.CanvasTexture | null = null;
+  private colorCtx: CanvasRenderingContext2D | null = null;
+  private pristineColor: HTMLCanvasElement | null = null;
+  private readonly tintCtx: CanvasRenderingContext2D;
+  private colorDirty = false;
+  private lastColorFlush = -1;
+  private prevLeft = new THREE.Vector2();
+  private prevRight = new THREE.Vector2();
+  private hasPrev = false;
+
+  // Per-cell: -1 = not paintable (outside rink), 0 = paintable & untouched,
+  // > 0 = timestamp of last paint + 1 (so 0 stays falsy-free).
+  private readonly lastPaint = new Float32Array(GRID_COLS * GRID_ROWS);
+  private paintableCells = 0;
+  private paintedCells = 0;
+  private overlapEvents = 0;
+
+  constructor() {
+    const canvas = document.createElement('canvas');
+    canvas.width = TEX_W;
+    canvas.height = TEX_H;
+    this.ctx = canvas.getContext('2d')!;
+    this.texture = new THREE.CanvasTexture(canvas);
+    const tintCanvas = document.createElement('canvas');
+    tintCanvas.width = TEX_W;
+    tintCanvas.height = TEX_H;
+    this.tintCtx = tintCanvas.getContext('2d')!;
+    this.reset();
+  }
+
+  /**
+   * Freshly resurfaced ice is wet and reads darker from above, so the strip
+   * is also tinted into the ice colour map – the roughness map alone only
+   * shows at grazing angles.
+   */
+  attachColorMap(texture: THREE.CanvasTexture, canvas: HTMLCanvasElement): void {
+    this.colorTexture = texture;
+    this.colorCtx = canvas.getContext('2d')!;
+    this.pristineColor = document.createElement('canvas');
+    this.pristineColor.width = canvas.width;
+    this.pristineColor.height = canvas.height;
+    this.pristineColor.getContext('2d')!.drawImage(canvas, 0, 0);
+  }
+
+  reset(): void {
+    const { ctx } = this;
+    const g = ROUGH_DIRTY;
+    ctx.fillStyle = `rgb(${g},${g},${g})`;
+    ctx.fillRect(0, 0, TEX_W, TEX_H);
+
+    // Random skate scuffs so the dirty ice reads as used, not flat grey
+    ctx.strokeStyle = `rgba(210,210,210,0.5)`;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 400; i++) {
+      const x = Math.random() * TEX_W;
+      const y = Math.random() * TEX_H;
+      const a = Math.random() * Math.PI * 2;
+      const len = 10 + Math.random() * 60;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+      ctx.stroke();
+    }
+    this.texture.needsUpdate = true;
+
+    this.tintCtx.clearRect(0, 0, TEX_W, TEX_H);
+    if (this.colorCtx && this.pristineColor) {
+      this.colorCtx.drawImage(this.pristineColor, 0, 0);
+      this.colorTexture!.needsUpdate = true;
+    }
+    this.colorDirty = false;
+    this.lastColorFlush = -1;
+
+    this.hasPrev = false;
+    this.paintableCells = 0;
+    this.paintedCells = 0;
+    this.overlapEvents = 0;
+    const cellL = RINK_LENGTH / GRID_COLS;
+    const cellW = RINK_WIDTH / GRID_ROWS;
+    for (let r = 0; r < GRID_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        const x = -RINK_LENGTH / 2 + (c + 0.5) * cellL;
+        const z = -RINK_WIDTH / 2 + (r + 0.5) * cellW;
+        // Cells hugging the boards can't be reached by the blade centre-line
+        // sampling, so exclude a thin margin from the goal.
+        const paintable = rinkSignedDistance(x, z) < -0.45;
+        this.lastPaint[r * GRID_COLS + c] = paintable ? 0 : -1;
+        if (paintable) this.paintableCells++;
+      }
+    }
+  }
+
+  /** Call when the blade is lifted (reversing/stopped) to break the strip. */
+  liftBlade(): void {
+    this.hasPrev = false;
+  }
+
+  /**
+   * Lay down a strip of clean ice across the blade located at (x, z), facing
+   * along `heading`. `time` is elapsed game time in seconds.
+   */
+  paint(x: number, z: number, heading: number, time: number): void {
+    const rightX = Math.sin(heading + Math.PI / 2) * (SWATH_WIDTH / 2);
+    const rightZ = Math.cos(heading + Math.PI / 2) * (SWATH_WIDTH / 2);
+    const left = new THREE.Vector2(x - rightX, z - rightZ);
+    const right = new THREE.Vector2(x + rightX, z + rightZ);
+
+    if (this.hasPrev) {
+      const g = ROUGH_CLEAN;
+      this.fillQuad(this.ctx, left, right, `rgb(${g},${g},${g})`);
+      this.texture.needsUpdate = true;
+
+      // Opaque mask – no alpha build-up at the seams between frame quads
+      this.fillQuad(this.tintCtx, left, right, 'rgb(96, 140, 178)');
+      this.colorDirty = true;
+      this.flushColor(time);
+
+      this.markGrid(this.prevLeft, this.prevRight, left, right, time);
+    }
+
+    this.prevLeft.copy(left);
+    this.prevRight.copy(right);
+    this.hasPrev = true;
+  }
+
+  get coverage(): number {
+    return this.paintableCells === 0 ? 0 : this.paintedCells / this.paintableCells;
+  }
+
+  /** 1.0 = no ground covered twice; falls as overlap accumulates. */
+  get precision(): number {
+    const total = this.paintedCells + this.overlapEvents;
+    return total === 0 ? 1 : this.paintedCells / total;
+  }
+
+  /** True if the paintable cell at grid (col, row) has been resurfaced. */
+  isCellPainted(col: number, row: number): boolean {
+    return this.lastPaint[row * GRID_COLS + col] > 0;
+  }
+
+  isCellPaintable(col: number, row: number): boolean {
+    return this.lastPaint[row * GRID_COLS + col] >= 0;
+  }
+
+  /** Recomposite pristine markings + wet tint, throttled to ~7 Hz. */
+  private flushColor(time: number): void {
+    if (!this.colorCtx || !this.pristineColor || !this.colorDirty) return;
+    if (this.lastColorFlush >= 0 && time - this.lastColorFlush < 0.15) return;
+    this.lastColorFlush = time;
+    this.colorDirty = false;
+    const ctx = this.colorCtx;
+    ctx.drawImage(this.pristineColor, 0, 0);
+    ctx.globalAlpha = 0.35;
+    ctx.drawImage(this.tintCtx.canvas, 0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.globalAlpha = 1;
+    this.colorTexture!.needsUpdate = true;
+  }
+
+  private fillQuad(
+    ctx: CanvasRenderingContext2D,
+    left: THREE.Vector2,
+    right: THREE.Vector2,
+    style: string,
+  ): void {
+    ctx.fillStyle = style;
+    ctx.strokeStyle = style;
+    ctx.lineWidth = 2; // hide hairline seams between frame quads
+    ctx.beginPath();
+    ctx.moveTo(...this.toCanvas(this.prevLeft));
+    ctx.lineTo(...this.toCanvas(this.prevRight));
+    ctx.lineTo(...this.toCanvas(right));
+    ctx.lineTo(...this.toCanvas(left));
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  private toCanvas(p: THREE.Vector2): [number, number] {
+    return [
+      ((p.x + RINK_LENGTH / 2) / RINK_LENGTH) * TEX_W,
+      ((p.y + RINK_WIDTH / 2) / RINK_WIDTH) * TEX_H,
+    ];
+  }
+
+  /** Stamp the quad (pl, pr, cl, cr) into the coverage grid. */
+  private markGrid(
+    pl: THREE.Vector2,
+    pr: THREE.Vector2,
+    cl: THREE.Vector2,
+    cr: THREE.Vector2,
+    time: number,
+  ): void {
+    const cellL = RINK_LENGTH / GRID_COLS;
+    const cellW = RINK_WIDTH / GRID_ROWS;
+    const prevMid = pl.clone().add(pr).multiplyScalar(0.5);
+    const currMid = cl.clone().add(cr).multiplyScalar(0.5);
+    const travel = currMid.distanceTo(prevMid);
+    const alongSteps = Math.max(1, Math.ceil(travel / 0.2));
+    const acrossSteps = Math.ceil(SWATH_WIDTH / 0.2);
+
+    for (let i = 0; i <= alongSteps; i++) {
+      const t = i / alongSteps;
+      const lx = pl.x + (cl.x - pl.x) * t;
+      const lz = pl.y + (cl.y - pl.y) * t;
+      const rx = pr.x + (cr.x - pr.x) * t;
+      const rz = pr.y + (cr.y - pr.y) * t;
+      for (let j = 0; j <= acrossSteps; j++) {
+        const s = j / acrossSteps;
+        const x = lx + (rx - lx) * s;
+        const z = lz + (rz - lz) * s;
+        const c = Math.floor((x + RINK_LENGTH / 2) / cellL);
+        const r = Math.floor((z + RINK_WIDTH / 2) / cellW);
+        if (c < 0 || c >= GRID_COLS || r < 0 || r >= GRID_ROWS) continue;
+        const idx = r * GRID_COLS + c;
+        const last = this.lastPaint[idx];
+        if (last < 0) continue; // not paintable
+        if (last === 0) {
+          this.paintedCells++;
+        } else if (time + 1 - last > REVISIT_SECONDS) {
+          this.overlapEvents++;
+        }
+        this.lastPaint[idx] = time + 1;
+      }
+    }
+  }
+}
