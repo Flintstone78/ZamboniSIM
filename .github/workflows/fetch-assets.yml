@@ -1,15 +1,14 @@
 # Mirrors generated art assets (Higgsfield CDN) into the repo. The dev
 # sandbox's network policy blocks the CDN, so the runner fetches and commits
-# instead. Dispatch with newline-separated "url|repo/path" pairs.
+# instead. Triggered by pushing an updated design/assets-to-fetch.txt
+# (newline-separated "url|repo/path" pairs). The runner's own commit carries
+# [skip ci] so it cannot re-trigger itself.
 name: fetch-assets
 
 on:
-  workflow_dispatch:
-    inputs:
-      files:
-        description: 'Newline-separated "url|path" pairs'
-        required: true
-        type: string
+  push:
+    paths:
+      - design/assets-to-fetch.txt
 
 permissions:
   contents: write
@@ -20,19 +19,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download
-        env:
-          FILES: ${{ inputs.files }}
         run: |
           while IFS='|' read -r url path; do
-            [ -z "$url" ] && continue
+            case "$url" in ''|'#'*) continue ;; esac
             mkdir -p "$(dirname "$path")"
             curl -fsSL "$url" -o "$path"
             echo "fetched $path"
-          done <<< "$FILES"
+          done < design/assets-to-fetch.txt
       - name: Commit
         run: |
           git config user.name "asset-fetch"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          git commit -m "Lägg till genererade grafik-assets" || echo "nothing to commit"
+          git commit -m "Lägg till genererade grafik-assets [skip ci]" || echo "nothing to commit"
           git push

@@ -1,0 +1,6 @@
+# Genererade assets som fetch-assets-workflowen speglar in i repot.
+# Format: url|sökväg
+https://d8j0ntlcm91z4.cloudfront.net/user_31lzKoSpboO8qwWIiCCdqBBI5ak/hf_20260612_203505_8685a800-19b8-4998-a372-0ccfd366647a.png|design/zamboni_concept.png
+https://d8j0ntlcm91z4.cloudfront.net/user_31lzKoSpboO8qwWIiCCdqBBI5ak/hf_20260612_203527_b86e0bf9-d77d-4584-bae9-fa73871e61e5.png|public/assets/board_ads.png
+https://d8j0ntlcm91z4.cloudfront.net/user_31lzKoSpboO8qwWIiCCdqBBI5ak/hf_20260612_203530_d9154ba2-a31e-48fb-9f27-57646bdba981.png|public/assets/crowd.png
+https://d8j0ntlcm91z4.cloudfront.net/user_31lzKoSpboO8qwWIiCCdqBBI5ak/hf_20260612_203534_81be7923-9c5e-4301-8fe1-a33488d2cb56.png|public/assets/scoreboard.png
