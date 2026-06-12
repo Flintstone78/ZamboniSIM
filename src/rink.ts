@@ -241,7 +241,7 @@ export function createRink(): Rink {
   );
   loadTextureInto('/assets/board_ads.png', (tex) => {
     tex.wrapS = THREE.RepeatWrapping;
-    tex.repeat.set(1 / 10, 1); // one strip of ad panels per 10 m of boards
+    tex.repeat.set(1 / 5, 1); // one strip of five ad panels per 5 m of boards
     adMaterial.map = tex;
     adMaterial.color.set('#ffffff');
     adMaterial.needsUpdate = true;

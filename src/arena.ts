@@ -39,6 +39,7 @@ export function createArena(scene: THREE.Scene): void {
     for (const mat of crowdMats) {
       const ownTex = tex.clone();
       ownTex.repeat.set(mat.userData.repeatX, 1);
+      ownTex.needsUpdate = true;
       mat.map = ownTex;
       mat.visible = true;
       mat.needsUpdate = true;
@@ -66,9 +67,13 @@ export function createArena(scene: THREE.Scene): void {
       'uv',
       new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2),
     );
-    geo.setIndex(side * (alongX ? 1 : -1) > 0 ? [0, 1, 2, 1, 3, 2] : [0, 2, 1, 1, 2, 3]);
+    geo.setIndex([0, 1, 2, 1, 3, 2]);
     geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, visible: false });
+    const mat = new THREE.MeshStandardMaterial({
+      roughness: 0.95,
+      visible: false,
+      side: THREE.DoubleSide,
+    });
     // One full texture per ~slope-width of stand keeps the figures life-sized
     mat.userData.repeatX = Math.max(1, Math.round(length / (slope * (16 / 9))));
     crowdMats.push(mat);
