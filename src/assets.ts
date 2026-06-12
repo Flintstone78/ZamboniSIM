@@ -7,12 +7,17 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
  * material/mesh and upgrades when the asset arrives. A missing file therefore
  * degrades gracefully instead of rendering black.
  */
+/** Resolve an absolute asset path against Vite's base (GitHub Pages serves
+ * the game from a subdirectory). */
+const assetUrl = (path: string): string =>
+  import.meta.env.BASE_URL + path.replace(/^\//, '');
+
 export function loadTextureInto(
   url: string,
   apply: (texture: THREE.Texture) => void,
 ): void {
   new THREE.TextureLoader().load(
-    url,
+    assetUrl(url),
     (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 8;
@@ -30,7 +35,7 @@ export function loadModelInto(
   apply: (model: THREE.Group) => void,
 ): void {
   new GLTFLoader().load(
-    url,
+    assetUrl(url),
     (gltf) => apply(gltf.scene),
     undefined,
     () => {
