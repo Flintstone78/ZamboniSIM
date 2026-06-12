@@ -4,7 +4,7 @@ import { loadModelInto } from './assets';
 
 // Yaw applied to the generated GLB so its nose points along local +Z
 // (depends on how the mesh generator oriented it – tuned visually).
-const MODEL_YAW = Math.PI / 2;
+const MODEL_YAW = -Math.PI / 2;
 
 /**
  * Procedural low-poly zamboni, nose pointing along local +Z so it can be
