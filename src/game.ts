@@ -228,13 +228,13 @@ export class Game {
     this.camera.up.set(0, 1, 0);
 
     if (this.cameraMode === 'fpv') {
-      // Driver's eye from the rear platform
+      // Driver's eye from the rear platform, just above the snow tank
       this.camera.position.set(
-        pos.x - fwd.x * 1.4,
-        2.25,
-        pos.y - fwd.y * 1.4,
+        pos.x - fwd.x * 1.9,
+        2.6,
+        pos.y - fwd.y * 1.9,
       );
-      this.camera.lookAt(pos.x + fwd.x * 12, 1.3, pos.y + fwd.y * 12);
+      this.camera.lookAt(pos.x + fwd.x * 12, 1.2, pos.y + fwd.y * 12);
       this.camPos.copy(this.camera.position);
       return;
     }

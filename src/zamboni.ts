@@ -4,7 +4,7 @@ import { loadModelInto } from './assets';
 
 // Yaw applied to the generated GLB so its nose points along local +Z
 // (depends on how the mesh generator oriented it – tuned visually).
-const MODEL_YAW = Math.PI;
+const MODEL_YAW = Math.PI / 2;
 
 /**
  * Procedural low-poly zamboni, nose pointing along local +Z so it can be
@@ -19,10 +19,13 @@ export function createZamboni(): THREE.Group {
       if (o instanceof THREE.Mesh) o.castShadow = true;
     });
     model.rotation.y = MODEL_YAW;
-    // Normalise: real-world length, centred on the axle, wheels on the ice
+    // Normalise: real-world length, centred on the axle, wheels on the ice.
+    // The generated mesh is chunkier than a real zamboni, so the height is
+    // capped separately to keep the driver's sightline sensible.
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
-    model.scale.setScalar(ZAM_LENGTH / Math.max(size.x, size.z));
+    const sxz = ZAM_LENGTH / Math.max(size.x, size.z);
+    model.scale.set(sxz, Math.min(sxz, 2.45 / size.y), sxz);
     box.setFromObject(model);
     const center = box.getCenter(new THREE.Vector3());
     model.position.set(-center.x, -box.min.y, -center.z);

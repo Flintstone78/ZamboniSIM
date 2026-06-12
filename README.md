@@ -48,6 +48,10 @@ npm run dev
 - Allt ljud syntetiseras med Web Audio – motorbrum (detunade sågtänder genom
   lågpass, varvtal följer farten), skrapljud (bandpassat brus när skrapan är
   nere), publiksorl, krocksmällar och måljingel. Inga ljudfiler behövs.
+- Grafikassets (zamboni-GLB, sargreklam, publik, scoreboard) är AI-genererade
+  via Higgsfield enligt stilkontraktet i `design/style.md`; allt laddas från
+  `/assets` med graciös fallback till den procedurella looken om en fil
+  saknas.
 
 ## Utveckling
 
@@ -68,6 +72,7 @@ installerad.
 - [x] Ljud: motor, skrapljud, publiksorl
 - [x] Hinder på isen (puckar, konor) och fler saker att krocka med
 - [x] Lokalt rekord (localStorage)
+- [x] Riktig zamboni-modell (GLTF) i stället för den procedurella
+- [x] AI-genererad arenagrafik: sargreklam, publik, scoreboard
 - [ ] Fler arenor – från lokala ishallen till storarenan
-- [ ] Riktig zamboni-modell (GLTF) i stället för den procedurella
 - [ ] Nivåprogression med stigande svårighetsgrad
