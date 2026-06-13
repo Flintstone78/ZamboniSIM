@@ -10,9 +10,18 @@ import {
   BLUE_LINE_X,
   FACEOFF_CIRCLE_RADIUS,
   FACEOFF_SPOT_X,
-  FACEOFF_SPOT_Z,
+  faceoffSpotZ,
+  GATE_X_MIN,
+  GATE_X_MAX,
 } from './constants';
 import { loadTextureInto } from './assets';
+
+/** True inside the board gap where the zamboni gate sits (-Z long side). */
+export function inGateSpan(x: number, z: number): boolean {
+  return (
+    z < -RINK_WIDTH / 2 + 1.2 && x > GATE_X_MIN - 0.05 && x < GATE_X_MAX + 0.05
+  );
+}
 
 /**
  * Signed distance from a point to the rounded-rectangle rink boundary.
@@ -117,7 +126,7 @@ function createMarkingsTexture(): { texture: THREE.CanvasTexture; canvas: HTMLCa
   circle(0, 0, FACEOFF_CIRCLE_RADIUS, '#0033a0', false);
   for (const ix of [-1, 1]) {
     for (const iz of [-1, 1]) {
-      circle(ix * FACEOFF_SPOT_X, iz * FACEOFF_SPOT_Z, FACEOFF_CIRCLE_RADIUS, '#c8102e');
+      circle(ix * FACEOFF_SPOT_X, iz * faceoffSpotZ(), FACEOFF_CIRCLE_RADIUS, '#c8102e');
     }
   }
 
@@ -156,8 +165,9 @@ function perimeterBandGeometry(
   r: number,
   y0: number,
   y1: number,
+  skipGate = false,
 ): THREE.BufferGeometry {
-  const pts = roundedRectShape(halfL, halfW, r).getPoints(128);
+  const pts = roundedRectShape(halfL, halfW, r).getPoints(160);
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
@@ -167,6 +177,13 @@ function perimeterBandGeometry(
     positions.push(pts[i].x, y0, pts[i].y, pts[i].x, y1, pts[i].y);
     uvs.push(s, 0, s, 1);
     if (i > 0) {
+      if (
+        skipGate &&
+        inGateSpan(pts[i - 1].x, pts[i - 1].y) &&
+        inGateSpan(pts[i].x, pts[i].y)
+      ) {
+        continue;
+      }
       const a = (i - 1) * 2;
       // Wound so the front face points into the rink
       indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
@@ -175,6 +192,43 @@ function perimeterBandGeometry(
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** Horizontal strip between two parallel outlines at height y (board cap). */
+function perimeterCapGeometry(
+  innerHalfL: number,
+  innerHalfW: number,
+  innerR: number,
+  outerHalfL: number,
+  outerHalfW: number,
+  outerR: number,
+  y: number,
+  skipGate = false,
+): THREE.BufferGeometry {
+  const inner = roundedRectShape(innerHalfL, innerHalfW, innerR).getPoints(160);
+  const outer = roundedRectShape(outerHalfL, outerHalfW, outerR).getPoints(160);
+  const n = Math.min(inner.length, outer.length);
+  const positions: number[] = [];
+  const indices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    positions.push(inner[i].x, y, inner[i].y, outer[i].x, y, outer[i].y);
+    if (i > 0) {
+      if (
+        skipGate &&
+        inGateSpan(inner[i - 1].x, inner[i - 1].y) &&
+        inGateSpan(inner[i].x, inner[i].y)
+      ) {
+        continue;
+      }
+      const a = (i - 1) * 2;
+      indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setIndex(indices);
   geo.computeVertexNormals();
   return geo;
@@ -203,28 +257,48 @@ export function createRink(): Rink {
   ice.receiveShadow = true;
   group.add(ice);
 
-  // Boards: a rounded-rectangle ring extruded upwards
-  const outer = roundedRectShape(
-    RINK_LENGTH / 2 + BOARD_THICKNESS,
-    RINK_WIDTH / 2 + BOARD_THICKNESS,
-    CORNER_RADIUS + BOARD_THICKNESS,
-  );
-  outer.holes.push(
-    roundedRectShape(RINK_LENGTH / 2, RINK_WIDTH / 2, CORNER_RADIUS),
-  );
-
-  const boardGeo = new THREE.ExtrudeGeometry(outer, {
-    depth: BOARD_HEIGHT,
-    bevelEnabled: false,
-    curveSegments: 32,
+  // Boards: inner + outer faces and a red handrail cap, built as ribbons so
+  // the zamboni gate can punch a real gap through them
+  const boardMat = new THREE.MeshStandardMaterial({
+    color: '#f5f5f5',
+    roughness: 0.55,
+    side: THREE.DoubleSide,
   });
-  const boards = new THREE.Mesh(
-    boardGeo,
-    new THREE.MeshStandardMaterial({ color: '#f5f5f5', roughness: 0.55 }),
+  const innerFace = new THREE.Mesh(
+    perimeterBandGeometry(RINK_LENGTH / 2, RINK_WIDTH / 2, CORNER_RADIUS, 0, BOARD_HEIGHT, true),
+    boardMat,
   );
-  boards.rotation.x = -Math.PI / 2;
-  boards.castShadow = true;
-  group.add(boards);
+  innerFace.castShadow = true;
+  group.add(innerFace);
+  group.add(
+    new THREE.Mesh(
+      perimeterBandGeometry(
+        RINK_LENGTH / 2 + BOARD_THICKNESS,
+        RINK_WIDTH / 2 + BOARD_THICKNESS,
+        CORNER_RADIUS + BOARD_THICKNESS,
+        0,
+        BOARD_HEIGHT,
+        true,
+      ),
+      boardMat,
+    ),
+  );
+  group.add(
+    new THREE.Mesh(
+      perimeterCapGeometry(
+        RINK_LENGTH / 2,
+        RINK_WIDTH / 2,
+        CORNER_RADIUS,
+        RINK_LENGTH / 2 + BOARD_THICKNESS,
+        RINK_WIDTH / 2 + BOARD_THICKNESS,
+        CORNER_RADIUS + BOARD_THICKNESS,
+        BOARD_HEIGHT,
+        true,
+      ),
+      new THREE.MeshStandardMaterial({ color: '#b71c1c', roughness: 0.4, side: THREE.DoubleSide }),
+    ),
+  );
+  // (the gate's own module closes the board cross-section at the opening)
 
   // Sponsor ads on the inside of the boards (generated texture; the band
   // stays plain white until/unless the asset loads)
@@ -236,6 +310,7 @@ export function createRink(): Rink {
       CORNER_RADIUS - 0.015,
       0.21,
       BOARD_HEIGHT - 0.02,
+      true,
     ),
     adMaterial,
   );
@@ -248,49 +323,31 @@ export function createRink(): Rink {
   });
   group.add(adBand);
 
-  // Yellow kickplate strip at the base of the boards (slightly inset ring)
-  const kickOuter = roundedRectShape(RINK_LENGTH / 2 + 0.02, RINK_WIDTH / 2 + 0.02, CORNER_RADIUS + 0.02);
-  kickOuter.holes.push(
-    roundedRectShape(RINK_LENGTH / 2 - 0.02, RINK_WIDTH / 2 - 0.02, CORNER_RADIUS - 0.02),
-  );
-  const kick = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(kickOuter, { depth: 0.2, bevelEnabled: false, curveSegments: 32 }),
-    new THREE.MeshStandardMaterial({ color: '#f2c40f', roughness: 0.6 }),
-  );
-  kick.rotation.x = -Math.PI / 2;
-  kick.position.y = 0.005;
-  group.add(kick);
-
-  // Red handrail cap on top of the boards
-  const capOuter = roundedRectShape(
-    RINK_LENGTH / 2 + BOARD_THICKNESS + 0.02,
-    RINK_WIDTH / 2 + BOARD_THICKNESS + 0.02,
-    CORNER_RADIUS + BOARD_THICKNESS + 0.02,
-  );
-  capOuter.holes.push(roundedRectShape(RINK_LENGTH / 2 - 0.02, RINK_WIDTH / 2 - 0.02, CORNER_RADIUS - 0.02));
-  const cap = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(capOuter, { depth: 0.06, bevelEnabled: false, curveSegments: 32 }),
-    new THREE.MeshStandardMaterial({ color: '#b71c1c', roughness: 0.4 }),
-  );
-  cap.rotation.x = -Math.PI / 2;
-  cap.position.y = BOARD_HEIGHT;
-  group.add(cap);
-
-  // Protective glass above the boards
-  const glassOuter = roundedRectShape(
-    RINK_LENGTH / 2 + BOARD_THICKNESS / 2 + 0.025,
-    RINK_WIDTH / 2 + BOARD_THICKNESS / 2 + 0.025,
-    CORNER_RADIUS + BOARD_THICKNESS / 2 + 0.025,
-  );
-  glassOuter.holes.push(
-    roundedRectShape(
-      RINK_LENGTH / 2 + BOARD_THICKNESS / 2 - 0.025,
-      RINK_WIDTH / 2 + BOARD_THICKNESS / 2 - 0.025,
-      CORNER_RADIUS + BOARD_THICKNESS / 2 - 0.025,
+  // Yellow kickplate strip at the base of the boards
+  group.add(
+    new THREE.Mesh(
+      perimeterBandGeometry(
+        RINK_LENGTH / 2 - 0.01,
+        RINK_WIDTH / 2 - 0.01,
+        CORNER_RADIUS - 0.01,
+        0,
+        0.2,
+        true,
+      ),
+      new THREE.MeshStandardMaterial({ color: '#f2c40f', roughness: 0.6, side: THREE.DoubleSide }),
     ),
   );
+
+  // Protective glass above the boards
   const glass = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(glassOuter, { depth: GLASS_HEIGHT, bevelEnabled: false, curveSegments: 32 }),
+    perimeterBandGeometry(
+      RINK_LENGTH / 2 + BOARD_THICKNESS / 2,
+      RINK_WIDTH / 2 + BOARD_THICKNESS / 2,
+      CORNER_RADIUS + BOARD_THICKNESS / 2,
+      BOARD_HEIGHT,
+      BOARD_HEIGHT + GLASS_HEIGHT,
+      true,
+    ),
     new THREE.MeshPhysicalMaterial({
       color: '#cfe8ff',
       transparent: true,
@@ -300,8 +357,6 @@ export function createRink(): Rink {
       depthWrite: false,
     }),
   );
-  glass.rotation.x = -Math.PI / 2;
-  glass.position.y = BOARD_HEIGHT + 0.06;
   group.add(glass);
 
   return { group, iceMaterial, colorTexture: markings.texture, colorCanvas: markings.canvas };

@@ -16,6 +16,17 @@ export interface VehicleEvents {
   onCollision: (impactSpeed: number) => void;
 }
 
+/** Drivable-area boundary: signed distance (negative inside) + outward normal. */
+export interface Boundary {
+  sdf: (x: number, z: number) => number;
+  normal: (x: number, z: number) => THREE.Vector2;
+}
+
+const RINK_BOUNDARY: Boundary = {
+  sdf: rinkSignedDistance,
+  normal: rinkBoundaryNormal,
+};
+
 /**
  * Kinematic bicycle model with icy lateral slip. Heading 0 faces +Z and the
  * forward vector is (sin heading, cos heading) in the XZ plane, matching a
@@ -26,16 +37,22 @@ export class Vehicle {
   heading = 0;
   velocity = new THREE.Vector2(0, 0);
   steer = 0;
+  /** The conditioner blade – only cleans while down. */
+  bladeDown = false;
 
   private collisionCooldown = 0;
 
-  constructor(private events: VehicleEvents) {}
+  constructor(
+    private events: VehicleEvents,
+    private boundary: Boundary = RINK_BOUNDARY,
+  ) {}
 
   reset(x: number, z: number, heading: number): void {
     this.position.set(x, z);
     this.heading = heading;
     this.velocity.set(0, 0);
     this.steer = 0;
+    this.bladeDown = false;
     this.collisionCooldown = 0;
   }
 
@@ -46,6 +63,13 @@ export class Vehicle {
   /** Signed speed along the vehicle's forward axis (m/s). */
   get forwardSpeed(): number {
     return this.velocity.dot(this.forward);
+  }
+
+  /** Report an impact, debounced so one scrape doesn't spam events. */
+  registerHit(impactSpeed: number): void {
+    if (this.collisionCooldown > 0) return;
+    this.collisionCooldown = 1.2;
+    this.events.onCollision(impactSpeed);
   }
 
   update(dt: number, throttle: number, steerInput: number): void {
@@ -77,15 +101,15 @@ export class Vehicle {
     this.velocity.copy(lateral).addScaledVector(newFwd, vF);
     this.position.addScaledVector(this.velocity, dt);
 
-    this.resolveBoardCollision();
+    this.resolveBoundaryCollision();
   }
 
-  private resolveBoardCollision(): void {
-    const d = rinkSignedDistance(this.position.x, this.position.y);
+  private resolveBoundaryCollision(): void {
+    const d = this.boundary.sdf(this.position.x, this.position.y);
     const overlap = d + ZAM_COLLISION_RADIUS;
     if (overlap <= 0) return;
 
-    const n = rinkBoundaryNormal(this.position.x, this.position.y);
+    const n = this.boundary.normal(this.position.x, this.position.y);
     this.position.addScaledVector(n, -overlap);
 
     const vAlongN = this.velocity.dot(n);
@@ -93,43 +117,109 @@ export class Vehicle {
       // Kill the outward velocity and most of the rest – boards are not bouncy
       this.velocity.addScaledVector(n, -vAlongN * 1.1);
       this.velocity.multiplyScalar(0.4);
-      if (this.collisionCooldown === 0 && vAlongN > 0.8) {
-        this.collisionCooldown = 1.2;
-        this.events.onCollision(vAlongN);
-      }
+      if (vAlongN > 0.8) this.registerHit(vAlongN);
     }
   }
 }
 
-/** Tracks pressed keys and exposes them as throttle/steer axes. */
+/** Push two vehicles apart when they collide; returns impact speed or 0. */
+export function resolveVehicleCollision(a: Vehicle, b: Vehicle): number {
+  const offset = b.position.clone().sub(a.position);
+  const dist = offset.length();
+  const minDist = ZAM_COLLISION_RADIUS * 2;
+  if (dist >= minDist || dist < 1e-4) return 0;
+  const n = offset.divideScalar(dist);
+  const push = (minDist - dist) / 2;
+  a.position.addScaledVector(n, -push);
+  b.position.addScaledVector(n, push);
+  const closing = a.velocity.dot(n) - b.velocity.dot(n);
+  if (closing > 0) {
+    a.velocity.addScaledVector(n, -closing * 0.6);
+    b.velocity.addScaledVector(n, closing * 0.6);
+    return closing;
+  }
+  return 0;
+}
+
+interface PlayerKeys {
+  fwd: string[];
+  back: string[];
+  left: string[];
+  right: string[];
+  blade: string[];
+}
+
+const PLAYER_KEYS: PlayerKeys[] = [
+  {
+    fwd: ['KeyW'],
+    back: ['KeyS'],
+    left: ['KeyA'],
+    right: ['KeyD'],
+    blade: ['Space'],
+  },
+  {
+    fwd: ['ArrowUp'],
+    back: ['ArrowDown'],
+    left: ['ArrowLeft'],
+    right: ['ArrowRight'],
+    blade: ['Enter'],
+  },
+];
+
+/**
+ * Tracks pressed keys (by physical key code, layout-independent) and exposes
+ * per-player throttle/steer axes. In single-player mode player 0 also gets
+ * player 1's keys, so both WASD and the arrows work.
+ */
 export class Input {
   private keys = new Set<string>();
+  /** Single-player merges both key sets onto player 0. */
+  shareKeys = true;
   onTap: Record<string, () => void> = {};
 
   constructor() {
     window.addEventListener('keydown', (e) => {
-      const k = e.key.toLowerCase();
-      if (!e.repeat) this.onTap[k]?.();
-      this.keys.add(k);
-      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) {
+      if (!e.repeat) this.onTap[e.code]?.();
+      this.keys.add(e.code);
+      if (
+        ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)
+      ) {
         e.preventDefault();
       }
     });
-    window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
   }
 
-  get throttle(): number {
+  private has(codes: string[]): boolean {
+    return codes.some((c) => this.keys.has(c));
+  }
+
+  private keysFor(player: number): PlayerKeys[] {
+    if (player === 0 && this.shareKeys) return PLAYER_KEYS;
+    return [PLAYER_KEYS[player]];
+  }
+
+  throttle(player: number): number {
     let t = 0;
-    if (this.keys.has('w') || this.keys.has('arrowup')) t += 1;
-    if (this.keys.has('s') || this.keys.has('arrowdown')) t -= 1;
+    for (const k of this.keysFor(player)) {
+      if (this.has(k.fwd)) t = 1;
+      if (this.has(k.back)) t = t === 1 ? 0 : -1;
+    }
     return t;
   }
 
-  get steer(): number {
+  steer(player: number): number {
     let s = 0;
-    if (this.keys.has('a') || this.keys.has('arrowleft')) s += 1;
-    if (this.keys.has('d') || this.keys.has('arrowright')) s -= 1;
+    for (const k of this.keysFor(player)) {
+      if (this.has(k.left)) s = 1;
+      if (this.has(k.right)) s = s === 1 ? 0 : -1;
+    }
     return s;
+  }
+
+  /** Key codes that toggle the given player's blade. */
+  bladeCodes(player: number): string[] {
+    return this.keysFor(player).flatMap((k) => k.blade);
   }
 }

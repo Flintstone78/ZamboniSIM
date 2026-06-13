@@ -58,7 +58,7 @@
         bottom: 16px; left: 50%; transform: translateX(-50%);
         font-size: 12.5px; color: #8fb2d4; text-align: center;
       }
-      #hud-help kbd {
+      kbd {
         background: rgba(255, 255, 255, 0.14); border-radius: 4px;
         padding: 1px 6px; font-family: inherit; color: #fff;
       }
@@ -91,6 +91,55 @@
         min-height: 20px; margin: -8px 0 20px;
         font-size: 15px; font-weight: 700; color: #ffd54f;
       }
+      #finish-overlay .buttons { display: flex; gap: 10px; justify-content: center; }
+      #finish-overlay button.secondary { background: rgba(255,255,255,0.16); color: #e8f1fa; }
+
+      #time-value.low { color: #ff7043; }
+      #blade-indicator {
+        bottom: 64px; left: 16px;
+        font-size: 12.5px; font-weight: 700; letter-spacing: 0.06em;
+        color: #8fb2d4; padding: 6px 10px;
+      }
+      #blade-indicator.down { color: #aef3b9; border-color: rgba(120,255,160,0.35); }
+      #level-name { top: 16px; left: 50%; transform: translateX(-50%); font-size: 13px; color: #cfe2f5; }
+
+      #menu-overlay {
+        position: fixed; inset: 0; display: none;
+        align-items: center; justify-content: center;
+        background: linear-gradient(rgba(4,8,14,0.55), rgba(4,8,14,0.82));
+      }
+      #menu-overlay .card {
+        background: var(--hud-bg); border: 1px solid var(--hud-border);
+        border-radius: 16px; padding: 30px 38px; text-align: center;
+        max-width: 660px; width: calc(100% - 40px); pointer-events: auto;
+      }
+      #menu-overlay h1 { font-size: 34px; letter-spacing: 0.04em; }
+      #menu-overlay .tagline { color: #9fc4e8; font-size: 14px; margin: 4px 0 18px; }
+      .standard-toggle { display: flex; gap: 8px; justify-content: center; margin-bottom: 18px; }
+      .standard-toggle button {
+        cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 600;
+        color: #c4d8ec; background: rgba(255,255,255,0.08);
+        border: 1px solid var(--hud-border); border-radius: 8px; padding: 8px 16px;
+      }
+      .standard-toggle button.selected {
+        background: var(--accent); color: #06121f; border-color: var(--accent);
+      }
+      #level-list { display: flex; flex-direction: column; gap: 8px; }
+      .level-card {
+        cursor: pointer; font: inherit; text-align: left;
+        display: grid; grid-template-columns: 130px 1fr auto; gap: 2px 14px;
+        align-items: center;
+        color: #e8f1fa; background: rgba(255,255,255,0.06);
+        border: 1px solid var(--hud-border); border-radius: 10px; padding: 10px 16px;
+      }
+      .level-card:hover:not(:disabled) { background: rgba(79,195,247,0.16); }
+      .level-card .division { font-size: 12px; color: #9fc4e8; text-transform: uppercase; letter-spacing: 0.08em; }
+      .level-card .name { font-size: 16px; font-weight: 700; }
+      .level-card .stars { color: #ffd54f; font-size: 15px; letter-spacing: 2px; }
+      .level-card .desc { grid-column: 1 / 4; font-size: 12.5px; color: #8fb2d4; }
+      .level-card.locked { opacity: 0.45; cursor: default; }
+      #menu-help { margin-top: 16px; font-size: 12px; color: #8fb2d4; }
+      body.in-menu .hud { display: none; }
       #finish-overlay button {
         pointer-events: auto; cursor: pointer;
         font: inherit; font-weight: 700; font-size: 16px;
@@ -121,16 +170,20 @@
       <span class="value" id="speed-value">0</span> km/h
     </div>
 
+    <div id="blade-indicator" class="hud panel">SKRAPA UPPE – tryck SPACE</div>
+    <div id="level-name" class="hud panel"></div>
+
     <div id="hud-help" class="hud">
       <kbd>W</kbd>/<kbd>S</kbd> gas/back &nbsp; <kbd>A</kbd>/<kbd>D</kbd> styr &nbsp;
-      <kbd>C</kbd> kamera &nbsp; <kbd>M</kbd> ljud &nbsp; <kbd>R</kbd> börja om
+      <kbd>SPACE</kbd> skrapa &nbsp; <kbd>C</kbd> kamera &nbsp; <kbd>M</kbd> ljud &nbsp;
+      <kbd>R</kbd> börja om &nbsp; <kbd>ESC</kbd> meny
     </div>
 
     <div id="toast" class="hud"></div>
 
     <div id="finish-overlay">
       <div class="card">
-        <h1>Isen är spolad!</h1>
+        <h1 id="finish-title">Isen är spolad!</h1>
         <div id="finish-stars"></div>
         <div class="breakdown">
           <div>Täckning <span class="value" id="finish-coverage"></span></div>
@@ -141,7 +194,27 @@
           <div style="margin-top:8px">Totalt <span class="value" id="finish-total"></span></div>
         </div>
         <div id="finish-record"></div>
-        <button id="restart-btn">Kör igen</button>
+        <div class="buttons">
+          <button id="next-btn">Nästa nivå →</button>
+          <button id="restart-btn" class="secondary">Kör igen</button>
+          <button id="menu-btn" class="secondary">Meny</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="menu-overlay">
+      <div class="card">
+        <h1>ZamboniSIM 🧊</h1>
+        <div class="tagline">Spola dig från Div 5 hela vägen till SHL – och vidare.</div>
+        <div class="standard-toggle">
+          <button id="standard-europa">Europa · 30 m</button>
+          <button id="standard-nordamerika">Nordamerika · 26 m</button>
+        </div>
+        <div id="level-list"></div>
+        <div id="menu-help">
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> kör &nbsp;
+          <kbd>SPACE</kbd> skrapa upp/ner &nbsp; <kbd>C</kbd> kamera &nbsp; <kbd>ESC</kbd> meny
+        </div>
       </div>
     </div>
 

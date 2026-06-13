@@ -9,6 +9,7 @@ import {
   RINK_WIDTH,
 } from './constants';
 import { rinkSignedDistance, rinkBoundaryNormal } from './rink';
+import { inGoalZone } from './goals';
 
 export interface ObstacleEvents {
   /** A standing cone was clipped and tips over. */
@@ -22,6 +23,7 @@ interface Puck {
   pos: THREE.Vector2;
   vel: THREE.Vector2;
   hitCooldown: number;
+  active: boolean;
 }
 
 interface Cone {
@@ -30,6 +32,7 @@ interface Cone {
   tipAxis: THREE.Vector3;
   tip: number; // 0 = standing, 1 = flat on the ice
   fallen: boolean;
+  active: boolean;
 }
 
 /**
@@ -56,6 +59,7 @@ export class Obstacles {
         pos: new THREE.Vector2(),
         vel: new THREE.Vector2(),
         hitCooldown: 0,
+        active: true,
       });
     }
 
@@ -68,12 +72,17 @@ export class Obstacles {
         tipAxis: new THREE.Vector3(1, 0, 0),
         tip: 0,
         fallen: false,
+        active: true,
       });
     }
   }
 
-  /** Re-randomise positions, keeping clear of the start point (clearX, clearZ). */
-  reset(clearX: number, clearZ: number): void {
+  /**
+   * Re-randomise positions, keeping clear of the start point (clearX, clearZ).
+   * Only the first `coneCount`/`puckCount` obstacles are activated – the rest
+   * are parked out of sight so each level can set its own difficulty.
+   */
+  reset(clearX: number, clearZ: number, coneCount?: number, puckCount?: number): void {
     const placed: THREE.Vector2[] = [];
     const place = (): THREE.Vector2 => {
       for (let attempt = 0; attempt < 200; attempt++) {
@@ -82,6 +91,7 @@ export class Obstacles {
           (Math.random() - 0.5) * (RINK_WIDTH - 6),
         );
         if (rinkSignedDistance(p.x, p.y) > -2) continue;
+        if (inGoalZone(p.x, p.y, 1.2)) continue;
         if (Math.hypot(p.x - clearX, p.y - clearZ) < 9) continue;
         if (placed.some((q) => q.distanceTo(p) < 3.5)) continue;
         placed.push(p);
@@ -92,19 +102,24 @@ export class Obstacles {
       return fallback;
     };
 
-    for (const puck of this.pucks) {
-      puck.pos.copy(place());
+    const parked = new THREE.Vector2(0, 1000); // far outside the hall
+    this.pucks.forEach((puck, i) => {
+      puck.active = i < (puckCount ?? this.pucks.length);
+      puck.pos.copy(puck.active ? place() : parked);
       puck.vel.set(0, 0);
       puck.hitCooldown = 0;
+      puck.mesh.visible = puck.active;
       puck.mesh.position.set(puck.pos.x, 0.025, puck.pos.y);
-    }
-    for (const cone of this.cones) {
-      cone.pos.copy(place());
+    });
+    this.cones.forEach((cone, i) => {
+      cone.active = i < (coneCount ?? this.cones.length);
+      cone.pos.copy(cone.active ? place() : parked);
       cone.tip = 0;
       cone.fallen = false;
+      cone.mesh.visible = cone.active;
       cone.mesh.position.set(cone.pos.x, 0, cone.pos.y);
       cone.mesh.quaternion.identity();
-    }
+    });
   }
 
   update(dt: number, vehiclePos: THREE.Vector2, vehicleVel: THREE.Vector2): void {
@@ -119,6 +134,7 @@ export class Obstacles {
   ): void {
     const minDist = ZAM_COLLISION_RADIUS + PUCK_RADIUS;
     for (const puck of this.pucks) {
+      if (!puck.active) continue;
       puck.hitCooldown = Math.max(0, puck.hitCooldown - dt);
 
       // Shunted by the zamboni: pushed out and sent sliding
@@ -156,6 +172,7 @@ export class Obstacles {
   ): void {
     const hitDist = ZAM_COLLISION_RADIUS + CONE_RADIUS;
     for (const cone of this.cones) {
+      if (!cone.active) continue;
       if (!cone.fallen) {
         if (cone.pos.distanceTo(vehiclePos) < hitDist) {
           cone.fallen = true;

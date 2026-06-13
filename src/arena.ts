@@ -1,15 +1,17 @@
 import * as THREE from 'three';
 import { RINK_LENGTH, RINK_WIDTH } from './constants';
 import { loadTextureInto } from './assets';
+import type { LevelDef } from './levels';
 
 /**
  * The surroundings: concrete apron, tiered stands, ceiling rig and lights.
- * This is the part that gets swapped out per arena (local rink vs MSG) –
- * the rink itself is regulation-sized everywhere.
+ * Built per level from its LevelDef (stands layout, scoreboard, ambience) and
+ * returned as one group so the next level can swap it out.
  */
-export function createArena(scene: THREE.Scene): void {
-  scene.background = new THREE.Color('#0a0e14');
-  scene.fog = new THREE.Fog('#0a0e14', 60, 160);
+export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
+  const group = new THREE.Group();
+  scene.background = new THREE.Color(level.hallColor);
+  scene.fog = new THREE.Fog(level.hallColor, 60, 160);
 
   // Concrete floor around the rink
   const floor = new THREE.Mesh(
@@ -19,9 +21,9 @@ export function createArena(scene: THREE.Scene): void {
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.02;
   floor.receiveShadow = true;
-  scene.add(floor);
+  group.add(floor);
 
-  // Tiered stands along both long sides and behind the goals
+  // Tiered stands along the configured sides
   const seatColors = ['#15418c', '#0f3370', '#1a4da3'];
   const standMat = seatColors.map(
     (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }),
@@ -77,7 +79,7 @@ export function createArena(scene: THREE.Scene): void {
     // One full texture per ~slope-width of stand keeps the figures life-sized
     mat.userData.repeatX = Math.max(1, Math.round(length / (slope * (16 / 9))));
     crowdMats.push(mat);
-    scene.add(new THREE.Mesh(geo, mat));
+    group.add(new THREE.Mesh(geo, mat));
   };
 
   const buildStand = (length: number, alongX: boolean, side: 1 | -1, offset: number) => {
@@ -90,22 +92,27 @@ export function createArena(scene: THREE.Scene): void {
       const y = tierHeight / 2 + i * tierHeight;
       if (alongX) m.position.set(0, y, side * dist);
       else m.position.set(side * dist, y, 0);
-      scene.add(m);
+      group.add(m);
     }
     crowdPlane(length, alongX, side, offset);
   };
-  buildStand(RINK_LENGTH + 10, true, 1, RINK_WIDTH / 2 + 4);
-  buildStand(RINK_LENGTH + 10, true, -1, RINK_WIDTH / 2 + 4);
-  buildStand(RINK_WIDTH + 6, false, 1, RINK_LENGTH / 2 + 4);
-  buildStand(RINK_WIDTH + 6, false, -1, RINK_LENGTH / 2 + 4);
+  if (level.stands !== 'none') {
+    buildStand(RINK_LENGTH + 10, true, 1, RINK_WIDTH / 2 + 4);
+    buildStand(RINK_LENGTH + 10, true, -1, RINK_WIDTH / 2 + 4);
+  }
+  if (level.stands === 'all') {
+    buildStand(RINK_WIDTH + 6, false, 1, RINK_LENGTH / 2 + 4);
+    buildStand(RINK_WIDTH + 6, false, -1, RINK_LENGTH / 2 + 4);
+  }
 
-  // Dark walls and ceiling to close the volume
+  // Dark walls and ceiling to close the volume; tighter in the small hall
+  const hallH = level.stands === 'none' ? 14 : 24;
   const hall = new THREE.Mesh(
-    new THREE.BoxGeometry(RINK_LENGTH + 50, 24, RINK_WIDTH + 50),
+    new THREE.BoxGeometry(RINK_LENGTH + 50, hallH, RINK_WIDTH + 50),
     new THREE.MeshStandardMaterial({ color: '#11151b', roughness: 1, side: THREE.BackSide }),
   );
-  hall.position.y = 12 - 0.05;
-  scene.add(hall);
+  hall.position.y = hallH / 2 - 0.05;
+  group.add(hall);
 
   // Light rig: emissive fixtures + real lights
   const fixtureMat = new THREE.MeshStandardMaterial({
@@ -113,17 +120,18 @@ export function createArena(scene: THREE.Scene): void {
     emissive: '#f4f8ff',
     emissiveIntensity: 3,
   });
+  const rigY = level.stands === 'none' ? 11 : 17;
   for (let i = -2; i <= 2; i++) {
     for (const z of [-6, 6]) {
       const fixture = new THREE.Mesh(new THREE.BoxGeometry(4, 0.25, 1.2), fixtureMat);
-      fixture.position.set(i * 12, 17, z);
-      scene.add(fixture);
+      fixture.position.set(i * 12, rigY, z);
+      group.add(fixture);
     }
   }
 
-  scene.add(new THREE.HemisphereLight('#bdd4ea', '#1c222b', 0.55));
+  group.add(new THREE.HemisphereLight('#bdd4ea', '#1c222b', 0.55 * level.lightIntensity));
 
-  const key = new THREE.DirectionalLight('#fdf6e8', 2.2);
+  const key = new THREE.DirectionalLight('#fdf6e8', 2.2 * level.lightIntensity);
   key.position.set(18, 26, 12);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -133,38 +141,43 @@ export function createArena(scene: THREE.Scene): void {
   key.shadow.camera.bottom = -30;
   key.shadow.camera.far = 70;
   key.shadow.bias = -0.0004;
-  scene.add(key);
+  group.add(key);
 
-  const fill = new THREE.DirectionalLight('#cfe2f5', 0.7);
+  const fill = new THREE.DirectionalLight('#cfe2f5', 0.7 * level.lightIntensity);
   fill.position.set(-20, 20, -14);
-  scene.add(fill);
+  group.add(fill);
 
   // Simple centre-hung scoreboard
-  const board = new THREE.Group();
-  const cube = new THREE.Mesh(
-    new THREE.BoxGeometry(5, 2.4, 5),
-    new THREE.MeshStandardMaterial({ color: '#14181d', roughness: 0.6 }),
-  );
-  board.add(cube);
-  const screenMat = new THREE.MeshStandardMaterial({
-    color: '#0a1622',
-    emissive: '#1c4d7a',
-    emissiveIntensity: 1.4,
-  });
-  loadTextureInto('/assets/scoreboard.png', (tex) => {
-    screenMat.map = tex;
-    screenMat.color.set('#ffffff');
-    screenMat.emissive.set('#ffffff');
-    screenMat.emissiveMap = tex;
-    screenMat.emissiveIntensity = 0.9;
-    screenMat.needsUpdate = true;
-  });
-  for (const ry of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.9), screenMat);
-    screen.position.set(Math.sin(ry) * 2.51, 0, Math.cos(ry) * 2.51);
-    screen.rotation.y = ry;
-    board.add(screen);
+  if (level.scoreboard) {
+    const board = new THREE.Group();
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(5, 2.4, 5),
+      new THREE.MeshStandardMaterial({ color: '#14181d', roughness: 0.6 }),
+    );
+    board.add(cube);
+    const screenMat = new THREE.MeshStandardMaterial({
+      color: '#0a1622',
+      emissive: '#1c4d7a',
+      emissiveIntensity: 1.4,
+    });
+    loadTextureInto('/assets/scoreboard.png', (tex) => {
+      screenMat.map = tex;
+      screenMat.color.set('#ffffff');
+      screenMat.emissive.set('#ffffff');
+      screenMat.emissiveMap = tex;
+      screenMat.emissiveIntensity = 0.9;
+      screenMat.needsUpdate = true;
+    });
+    for (const ry of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.9), screenMat);
+      screen.position.set(Math.sin(ry) * 2.51, 0, Math.cos(ry) * 2.51);
+      screen.rotation.y = ry;
+      board.add(screen);
+    }
+    board.position.set(0, 12, 0);
+    group.add(board);
   }
-  board.position.set(0, 12, 0);
-  scene.add(board);
+
+  scene.add(group);
+  return group;
 }

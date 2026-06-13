@@ -8,6 +8,13 @@ import {
   REVISIT_SECONDS,
 } from './constants';
 import { rinkSignedDistance } from './rink';
+import { inGoalZone } from './goals';
+
+interface Strip {
+  prevLeft: THREE.Vector2;
+  prevRight: THREE.Vector2;
+  hasPrev: boolean;
+}
 
 const TEX_W = 1024;
 const TEX_H = 512;
@@ -30,9 +37,12 @@ export class IceResurfacer {
   private readonly tintCtx: CanvasRenderingContext2D;
   private colorDirty = false;
   private lastColorFlush = -1;
-  private prevLeft = new THREE.Vector2();
-  private prevRight = new THREE.Vector2();
-  private hasPrev = false;
+  // One strip state per blade (two in co-op)
+  private strips: Strip[] = [0, 1].map(() => ({
+    prevLeft: new THREE.Vector2(),
+    prevRight: new THREE.Vector2(),
+    hasPrev: false,
+  }));
 
   // Per-cell: -1 = not paintable (outside rink), 0 = paintable & untouched,
   // > 0 = timestamp of last paint + 1 (so 0 stays falsy-free).
@@ -97,7 +107,7 @@ export class IceResurfacer {
     this.colorDirty = false;
     this.lastColorFlush = -1;
 
-    this.hasPrev = false;
+    for (const s of this.strips) s.hasPrev = false;
     this.paintableCells = 0;
     this.paintedCells = 0;
     this.overlapEvents = 0;
@@ -108,8 +118,9 @@ export class IceResurfacer {
         const x = -RINK_LENGTH / 2 + (c + 0.5) * cellL;
         const z = -RINK_WIDTH / 2 + (r + 0.5) * cellW;
         // Cells hugging the boards can't be reached by the blade centre-line
-        // sampling, so exclude a thin margin from the goal.
-        const paintable = rinkSignedDistance(x, z) < -0.45;
+        // sampling, and the goal cages can't be driven through – exclude both
+        // from the coverage goal.
+        const paintable = rinkSignedDistance(x, z) < -0.45 && !inGoalZone(x, z);
         this.lastPaint[r * GRID_COLS + c] = paintable ? 0 : -1;
         if (paintable) this.paintableCells++;
       }
@@ -117,36 +128,37 @@ export class IceResurfacer {
   }
 
   /** Call when the blade is lifted (reversing/stopped) to break the strip. */
-  liftBlade(): void {
-    this.hasPrev = false;
+  liftBlade(strip = 0): void {
+    this.strips[strip].hasPrev = false;
   }
 
   /**
    * Lay down a strip of clean ice across the blade located at (x, z), facing
    * along `heading`. `time` is elapsed game time in seconds.
    */
-  paint(x: number, z: number, heading: number, time: number): void {
+  paint(x: number, z: number, heading: number, time: number, strip = 0): void {
+    const s = this.strips[strip];
     const rightX = Math.sin(heading + Math.PI / 2) * (SWATH_WIDTH / 2);
     const rightZ = Math.cos(heading + Math.PI / 2) * (SWATH_WIDTH / 2);
     const left = new THREE.Vector2(x - rightX, z - rightZ);
     const right = new THREE.Vector2(x + rightX, z + rightZ);
 
-    if (this.hasPrev) {
+    if (s.hasPrev) {
       const g = ROUGH_CLEAN;
-      this.fillQuad(this.ctx, left, right, `rgb(${g},${g},${g})`);
+      this.fillQuad(this.ctx, s, left, right, `rgb(${g},${g},${g})`);
       this.texture.needsUpdate = true;
 
       // Opaque mask – no alpha build-up at the seams between frame quads
-      this.fillQuad(this.tintCtx, left, right, 'rgb(96, 140, 178)');
+      this.fillQuad(this.tintCtx, s, left, right, 'rgb(96, 140, 178)');
       this.colorDirty = true;
       this.flushColor(time);
 
-      this.markGrid(this.prevLeft, this.prevRight, left, right, time);
+      this.markGrid(s.prevLeft, s.prevRight, left, right, time);
     }
 
-    this.prevLeft.copy(left);
-    this.prevRight.copy(right);
-    this.hasPrev = true;
+    s.prevLeft.copy(left);
+    s.prevRight.copy(right);
+    s.hasPrev = true;
   }
 
   get coverage(): number {
@@ -184,6 +196,7 @@ export class IceResurfacer {
 
   private fillQuad(
     ctx: CanvasRenderingContext2D,
+    strip: Strip,
     left: THREE.Vector2,
     right: THREE.Vector2,
     style: string,
@@ -192,8 +205,8 @@ export class IceResurfacer {
     ctx.strokeStyle = style;
     ctx.lineWidth = 2; // hide hairline seams between frame quads
     ctx.beginPath();
-    ctx.moveTo(...this.toCanvas(this.prevLeft));
-    ctx.lineTo(...this.toCanvas(this.prevRight));
+    ctx.moveTo(...this.toCanvas(strip.prevLeft));
+    ctx.lineTo(...this.toCanvas(strip.prevRight));
     ctx.lineTo(...this.toCanvas(right));
     ctx.lineTo(...this.toCanvas(left));
     ctx.closePath();

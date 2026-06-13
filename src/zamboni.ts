@@ -6,13 +6,41 @@ import { loadModelInto } from './assets';
 // (depends on how the mesh generator oriented it – tuned visually).
 const MODEL_YAW = -Math.PI / 2;
 
+export interface ZamboniRig {
+  group: THREE.Group;
+  /** The conditioner housing dragged behind – animated up/down with Space. */
+  blade: THREE.Mesh;
+}
+
+const BLADE_DOWN_Y = 0.1;
+const BLADE_UP_Y = 0.5;
+
+/** Ease the blade toward its up/down position; call every frame. */
+export function animateBlade(blade: THREE.Mesh, down: boolean, dt: number): void {
+  const target = down ? BLADE_DOWN_Y : BLADE_UP_Y;
+  blade.position.y += (target - blade.position.y) * Math.min(1, dt * 8);
+  blade.rotation.x = ((blade.position.y - BLADE_DOWN_Y) / (BLADE_UP_Y - BLADE_DOWN_Y)) * 0.35;
+}
+
 /**
  * Procedural low-poly zamboni, nose pointing along local +Z so it can be
  * driven with rotation.y = heading. Upgrades itself to the generated GLB
- * model from /assets when available; the primitives are the fallback.
+ * model from /assets when available; the primitives are the fallback. The
+ * blade lives outside the swappable body so it survives the model upgrade.
  */
-export function createZamboni(): THREE.Group {
-  const g = new THREE.Group();
+export function createZamboni(): ZamboniRig {
+  const group = new THREE.Group();
+  const g = new THREE.Group(); // swappable body
+  group.add(g);
+
+  // Conditioner: the blade housing dragged behind, full swath width
+  const blade = new THREE.Mesh(
+    new THREE.BoxGeometry(SWATH_WIDTH, 0.18, 0.5),
+    new THREE.MeshStandardMaterial({ color: '#90a4ae', roughness: 0.5, metalness: 0.4 }),
+  );
+  blade.position.set(0, BLADE_UP_Y, -ZAM_LENGTH / 2 + 0.1);
+  blade.castShadow = true;
+  group.add(blade);
 
   loadModelInto('/assets/zamboni.glb', (model) => {
     model.traverse((o) => {
@@ -90,9 +118,6 @@ export function createZamboni(): THREE.Group {
     g.add(m);
   }
 
-  // Conditioner: the blade housing dragged behind, full swath width
-  box(SWATH_WIDTH, 0.18, 0.5, 0, 0.1, -L / 2 + 0.1, greyMat);
-
   // Beacon light on a pole
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.9), greyMat);
   pole.position.set(0.35, 2.0, -L * 0.36);
@@ -117,5 +142,5 @@ export function createZamboni(): THREE.Group {
   box(0.18, 0.12, 0.05, -W / 2 + 0.25, 0.85, L / 2 + 0.01, lampMat);
   box(0.18, 0.12, 0.05, W / 2 - 0.25, 0.85, L / 2 + 0.01, lampMat);
 
-  return g;
+  return { group, blade };
 }
