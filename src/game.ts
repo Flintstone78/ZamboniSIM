@@ -32,13 +32,19 @@ import {
   saveStars,
   nextLevel,
 } from './levels';
+import {
+  loadLevelBests,
+  saveLevelBest,
+  careerScore,
+  getName,
+  submitScore,
+} from './leaderboard';
 
 type CameraMode = 'chase' | 'fpv' | 'top';
 const CAMERA_MODES: CameraMode[] = ['chase', 'fpv', 'top'];
 
 type GameState = 'splash' | 'menu' | 'playing' | 'finished';
 
-const BEST_SCORE_KEY = 'zambonisim.best';
 
 export class Game {
   private scene = new THREE.Scene();
@@ -180,6 +186,7 @@ export class Game {
     this.hud.hideSplash();
     this.hud.hideFinish();
     this.hud.renderMenu(levelsForRegion(this.standard), loadStars(), this.standard);
+    void this.hud.renderLeaderboard();
     this.hud.showMenu();
   }
 
@@ -318,9 +325,11 @@ export class Game {
     const stars = !success ? 0 : total >= 13000 ? 3 : total >= 10500 ? 2 : 1;
     if (success) saveStars(this.level.id, stars);
 
-    const best = Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0);
-    const isRecord = success && total > best;
-    if (isRecord) localStorage.setItem(BEST_SCORE_KEY, String(Math.round(total)));
+    // Per-level personal best feeds the global career-score leaderboard
+    const prevBest = loadLevelBests()[this.level.id] ?? 0;
+    const isRecord = success && saveLevelBest(this.level.id, total);
+    if (isRecord && getName()) void submitScore(getName(), careerScore());
+    const best = Math.max(prevBest, success ? Math.round(total) : 0);
 
     this.hud.showFinish({
       success,

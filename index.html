@@ -174,6 +174,34 @@
       .level-card.locked { opacity: 0.45; cursor: default; }
       #menu-help { margin-top: 16px; font-size: 12px; color: #8fb2d4; }
       body.in-menu .hud { display: none; }
+
+      /* Player handle + global leaderboard */
+      #player-row {
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        margin: 16px 0 6px; font-size: 13px; color: #9fc4e8;
+      }
+      #player-name {
+        font: inherit; font-weight: 700; letter-spacing: 0.04em;
+        color: #e8f1fa; background: rgba(255,255,255,0.08);
+        border: 1px solid var(--hud-border); border-radius: 8px;
+        padding: 7px 12px; width: 180px; text-align: center; text-transform: uppercase;
+      }
+      #leaderboard { margin-top: 4px; }
+      #lb-title {
+        font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+        color: #ffd54f; text-transform: uppercase; margin-bottom: 6px;
+      }
+      #lb-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+      #lb-list li {
+        display: grid; grid-template-columns: 28px 1fr auto; gap: 10px;
+        font-size: 13px; color: #cfe2f5; padding: 3px 12px;
+        background: rgba(255,255,255,0.04); border-radius: 6px;
+      }
+      #lb-list li.you { background: rgba(79,195,247,0.18); color: #fff; font-weight: 700; }
+      #lb-list li .rank { color: #8fb2d4; text-align: right; }
+      #lb-list li .pts { color: #ffd54f; }
+      #lb-you { margin-top: 6px; font-size: 12.5px; color: #9fc4e8; }
+      #lb-empty { font-size: 12.5px; color: #6f8aa3; }
       #finish-overlay button {
         pointer-events: auto; cursor: pointer;
         font: inherit; font-weight: 700; font-size: 16px;
@@ -252,6 +280,15 @@
           <button id="standard-nordamerika">North America · 26 m</button>
         </div>
         <div id="level-list"></div>
+        <div id="player-row">
+          <label for="player-name">Name</label>
+          <input id="player-name" maxlength="16" placeholder="ZAMBONI HERO" />
+        </div>
+        <div id="leaderboard">
+          <div id="lb-title">🏆 Global Top — Career Score</div>
+          <ol id="lb-list"></ol>
+          <div id="lb-you"></div>
+        </div>
         <div id="menu-help">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp;
           <kbd>SPACE</kbd> blade up/down &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>ESC</kbd> menu

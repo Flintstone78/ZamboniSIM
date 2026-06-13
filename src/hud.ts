@@ -3,9 +3,19 @@ import type { RinkStandard } from './constants';
 import type { IceResurfacer } from './ice';
 import type { LevelDef } from './levels';
 import { isUnlocked } from './levels';
+import {
+  fetchTop,
+  careerScore,
+  getName,
+  setName,
+  leaderboardEnabled,
+} from './leaderboard';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
+
+const escapeHtml = (s: string): string =>
+  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 export interface FinishStats {
   success: boolean;
@@ -63,6 +73,47 @@ export class Hud {
     // Tint the level-select menu with a darkened cover for cohesion
     this.menuOverlay.style.backgroundImage =
       `linear-gradient(rgba(4,8,14,0.78), rgba(4,8,14,0.9)), url("${this.coverUrl}")`;
+
+    const nameInput = el<HTMLInputElement>('player-name');
+    nameInput.value = getName();
+    nameInput.addEventListener('change', () => {
+      setName(nameInput.value);
+      nameInput.value = getName();
+      void this.renderLeaderboard();
+    });
+  }
+
+  /** Fetch and render the global career-score board (best-effort, async). */
+  async renderLeaderboard(): Promise<void> {
+    const list = el('lb-list');
+    const you = el('lb-you');
+    const career = careerScore();
+    if (!leaderboardEnabled()) {
+      list.innerHTML =
+        '<li id="lb-empty">Global board is offline — your local career score still counts.</li>';
+      you.textContent = `Your career score: ${career} pts`;
+      return;
+    }
+    list.innerHTML = '<li id="lb-empty">Loading…</li>';
+    const rows = await fetchTop(8);
+    const myName = getName().toUpperCase();
+    if (rows.length === 0) {
+      list.innerHTML = '<li id="lb-empty">No scores yet — be the first!</li>';
+    } else {
+      list.innerHTML = '';
+      rows.forEach((r, i) => {
+        const li = document.createElement('li');
+        if (r.name.toUpperCase() === myName) li.classList.add('you');
+        li.innerHTML =
+          `<span class="rank">${i + 1}</span>` +
+          `<span>${escapeHtml(r.name)}</span>` +
+          `<span class="pts">${r.score}</span>`;
+        list.appendChild(li);
+      });
+    }
+    const idx = rows.findIndex((r) => r.name.toUpperCase() === myName);
+    you.textContent =
+      idx >= 0 ? `You: #${idx + 1} · ${career} pts` : `Your career score: ${career} pts`;
   }
 
   showSplash(): void {

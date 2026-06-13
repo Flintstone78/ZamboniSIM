@@ -13,7 +13,10 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => {
-  if (m.type() === 'error' && !m.text().includes('404')) errors.push(m.text());
+  const t = m.text();
+  // Ignore expected network noise: missing assets (404) and the leaderboard
+  // host being unreachable from the sandbox.
+  if (m.type() === 'error' && !/404|jsonblob|Failed to fetch|net::/i.test(t)) errors.push(t);
 });
 
 await page.goto('http://localhost:4173/?autostart=1&level=eu4', { waitUntil: 'networkidle' });
