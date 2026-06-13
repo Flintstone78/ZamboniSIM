@@ -180,6 +180,28 @@ export class IceResurfacer {
     return this.lastPaint[row * GRID_COLS + col] >= 0;
   }
 
+  /** Fraction of paintable cells inside a world rectangle that are resurfaced.
+   *  Used to detect when the strip behind a goal cage has been cleaned. */
+  regionCoverage(xMin: number, xMax: number, zMin: number, zMax: number): number {
+    const cellL = RINK_LENGTH / GRID_COLS;
+    const cellW = RINK_WIDTH / GRID_ROWS;
+    const c0 = Math.max(0, Math.floor((xMin + RINK_LENGTH / 2) / cellL));
+    const c1 = Math.min(GRID_COLS - 1, Math.floor((xMax + RINK_LENGTH / 2) / cellL));
+    const r0 = Math.max(0, Math.floor((zMin + RINK_WIDTH / 2) / cellW));
+    const r1 = Math.min(GRID_ROWS - 1, Math.floor((zMax + RINK_WIDTH / 2) / cellW));
+    let painted = 0;
+    let total = 0;
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const v = this.lastPaint[r * GRID_COLS + c];
+        if (v < 0) continue;
+        total++;
+        if (v > 0) painted++;
+      }
+    }
+    return total === 0 ? 1 : painted / total;
+  }
+
   /** Recomposite pristine markings + wet tint, throttled to ~7 Hz. */
   private flushColor(time: number): void {
     if (!this.colorCtx || !this.pristineColor || !this.colorDirty) return;

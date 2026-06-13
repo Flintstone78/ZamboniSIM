@@ -127,6 +127,33 @@ export class Obstacles {
     this.updateCones(dt, vehiclePos, vehicleVel);
   }
 
+  /** Nearest active puck to a point (skaters chase these). */
+  nearestPuck(pos: THREE.Vector2): THREE.Vector2 | null {
+    let best: THREE.Vector2 | null = null;
+    let bestD = Infinity;
+    for (const puck of this.pucks) {
+      if (!puck.active) continue;
+      const d = puck.pos.distanceToSquared(pos);
+      if (d < bestD) {
+        bestD = d;
+        best = puck.pos;
+      }
+    }
+    return best;
+  }
+
+  /** A skater stick-handling: shove nearby pucks away from `pos`. */
+  shovePucks(pos: THREE.Vector2, radius: number, strength: number): void {
+    for (const puck of this.pucks) {
+      if (!puck.active) continue;
+      const offset = puck.pos.clone().sub(pos);
+      const dist = offset.length();
+      if (dist < radius && dist > 1e-4) {
+        puck.vel.addScaledVector(offset.divideScalar(dist), strength);
+      }
+    }
+  }
+
   private updatePucks(
     dt: number,
     vehiclePos: THREE.Vector2,

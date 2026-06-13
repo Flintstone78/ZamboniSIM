@@ -1,12 +1,21 @@
 import * as THREE from 'three';
 import {
-  RINK_WIDTH,
+  RINK_LENGTH,
   GOAL_WIDTH,
   GOAL_DEPTH,
   GOAL_HEIGHT,
   ZAM_COLLISION_RADIUS,
 } from './constants';
 import type { Vehicle } from './vehicle';
+import type { IceResurfacer } from './ice';
+
+// Goals start pulled a good way in from the end boards so the first lap can
+// run cleanly along every board – including the strip behind each net. Once
+// that strip is resurfaced the net is "moved" back against the end boards
+// (lifted and tilted out of the way), freeing its footprint.
+const START_X = RINK_LENGTH / 2 - 7; // 23 m: net mouth faces centre ice
+const MOVE_SECONDS = 1.3;
+const BEHIND_CLEAN_THRESHOLD = 0.5;
 
 interface GoalBox {
   xMin: number;
@@ -15,45 +24,37 @@ interface GoalBox {
   zMax: number;
 }
 
-// During a resurfacing the nets are lifted off the goal line and parked
-// against the long-side boards, clear of the driving path. Their footprint
-// (collision + no-clean zone) is recomputed per level because the board they
-// rest against moves with the rink width. One net per long side, kept away
-// from the equipment-room gate on the -Z board (x -19..-15).
+interface GoalEntry {
+  mesh: THREE.Group;
+  side: 1 | -1; // +1 = +X end, -1 = -X end
+  anim: number; // 0 = in play, 1 = moved against the boards
+  lifting: boolean;
+  moved: boolean;
+}
+
+// Footprints of goals that are still in play (collision + no-clean). Rebuilt
+// whenever a goal starts moving, and read by inGoalZone / puck placement.
 let goalBoxes: GoalBox[] = [];
 
-interface ParkSpot {
-  x: number; // centre of the net's mouth along the boards
-  boardSign: 1 | -1; // +1 = +Z board, -1 = -Z board
-}
-const PARK_SPOTS: ParkSpot[] = [
-  { x: -10, boardSign: 1 },
-  { x: 10, boardSign: -1 },
-];
-
-function computeBoxes(): GoalBox[] {
-  const boardZ = RINK_WIDTH / 2;
-  return PARK_SPOTS.map(({ x, boardSign }) => {
-    const back = boardSign * boardZ;
-    const mouth = boardSign * (boardZ - GOAL_DEPTH);
-    return {
-      xMin: x - GOAL_WIDTH / 2,
-      xMax: x + GOAL_WIDTH / 2,
-      zMin: Math.min(back, mouth),
-      zMax: Math.max(back, mouth),
-    };
-  });
-}
-
-/** True under/inside a parked goal cage (these cells can't be resurfaced). */
+/** True under an in-play goal cage (can't be resurfaced while the net sits). */
 export function inGoalZone(x: number, z: number, margin = 0.25): boolean {
   return goalBoxes.some(
-    (b) =>
-      x > b.xMin - margin && x < b.xMax + margin && z > b.zMin - margin && z < b.zMax + margin,
+    (b) => x > b.xMin - margin && x < b.xMax + margin && z > b.zMin - margin && z < b.zMax + margin,
   );
 }
 
-/** A single net with its mouth opening toward local +Z, net sloping back to -Z. */
+function footprint(side: 1 | -1): GoalBox {
+  const mouth = side * START_X;
+  const back = side * (START_X + GOAL_DEPTH);
+  return {
+    xMin: Math.min(mouth, back),
+    xMax: Math.max(mouth, back),
+    zMin: -GOAL_WIDTH / 2,
+    zMax: GOAL_WIDTH / 2,
+  };
+}
+
+/** A goal facing local +X: posts at x=0, net sloping back toward -X. */
 function buildGoalMesh(): THREE.Group {
   const goal = new THREE.Group();
   const red = new THREE.MeshStandardMaterial({ color: '#c8102e', roughness: 0.45 });
@@ -66,97 +67,127 @@ function buildGoalMesh(): THREE.Group {
   });
 
   const postGeo = new THREE.CylinderGeometry(0.05, 0.05, GOAL_HEIGHT, 10);
-  for (const x of [-GOAL_WIDTH / 2, GOAL_WIDTH / 2]) {
+  for (const z of [-GOAL_WIDTH / 2, GOAL_WIDTH / 2]) {
     const post = new THREE.Mesh(postGeo, red);
-    post.position.set(x, GOAL_HEIGHT / 2, 0);
+    post.position.set(0, GOAL_HEIGHT / 2, z);
     post.castShadow = true;
     goal.add(post);
   }
-  const bar = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05, 0.05, GOAL_WIDTH + 0.1, 10),
-    red,
-  );
-  bar.rotation.z = Math.PI / 2;
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, GOAL_WIDTH + 0.1, 10), red);
+  bar.rotation.x = Math.PI / 2;
   bar.position.set(0, GOAL_HEIGHT, 0);
   goal.add(bar);
 
-  // Net: sloped back sheet (mouth at z=0, base of net at z=-GOAL_DEPTH)
   const backNet = new THREE.Mesh(
-    new THREE.PlaneGeometry(GOAL_WIDTH, Math.hypot(GOAL_DEPTH, GOAL_HEIGHT)),
+    new THREE.PlaneGeometry(Math.hypot(GOAL_DEPTH, GOAL_HEIGHT), GOAL_WIDTH),
     netMat,
   );
-  backNet.rotation.x = -Math.atan2(GOAL_DEPTH, GOAL_HEIGHT);
-  backNet.position.set(0, GOAL_HEIGHT / 2, -GOAL_DEPTH / 2);
+  backNet.rotation.y = Math.PI / 2;
+  backNet.rotation.z = Math.PI / 2 - Math.atan2(GOAL_HEIGHT, GOAL_DEPTH);
+  backNet.rotation.order = 'YZX';
+  backNet.position.set(-GOAL_DEPTH / 2, GOAL_HEIGHT / 2, 0);
   goal.add(backNet);
-  for (const x of [-GOAL_WIDTH / 2, GOAL_WIDTH / 2]) {
+  for (const z of [-GOAL_WIDTH / 2, GOAL_WIDTH / 2]) {
     const sideShape = new THREE.Shape();
     sideShape.moveTo(0, 0);
     sideShape.lineTo(0, GOAL_HEIGHT);
     sideShape.lineTo(-GOAL_DEPTH, 0);
     sideShape.closePath();
     const sideNet = new THREE.Mesh(new THREE.ShapeGeometry(sideShape), netMat);
-    sideNet.rotation.y = -Math.PI / 2;
-    sideNet.position.set(x, 0, 0);
+    sideNet.position.set(0, 0, z);
     goal.add(sideNet);
   }
   return goal;
 }
 
-/** Both nets parked against the long-side boards, mouths facing centre ice. */
-export function createGoals(): THREE.Group {
-  goalBoxes = computeBoxes();
-  const group = new THREE.Group();
-  const boardZ = RINK_WIDTH / 2;
+/** Both nets, started in play and moved aside once cleaned behind. */
+export class Goals {
+  readonly group = new THREE.Group();
+  private entries: GoalEntry[] = [];
 
-  for (const { x, boardSign } of PARK_SPOTS) {
-    const goal = buildGoalMesh();
-    // Mouth faces centre ice; net back sits against the board.
-    if (boardSign > 0) {
-      // +Z board: opening toward -Z (rotate 180°), back at +boardZ
-      goal.rotation.y = Math.PI;
-      goal.position.set(x, 0, boardZ - GOAL_DEPTH);
-    } else {
-      // -Z board: opening toward +Z (no rotation), back at -boardZ
-      goal.position.set(x, 0, -boardZ + GOAL_DEPTH);
+  constructor() {
+    for (const side of [1, -1] as const) {
+      const mesh = buildGoalMesh();
+      this.group.add(mesh);
+      this.entries.push({ mesh, side, anim: 0, lifting: false, moved: false });
     }
-    group.add(goal);
+    this.reset();
   }
-  return group;
-}
 
-/**
- * Push a vehicle out of the parked goal cages (box collision). Slows it down
- * like the boards do; returns the impact speed when a new hit lands, else 0.
- */
-export function resolveGoalCollision(vehicle: Vehicle): number {
-  const r = ZAM_COLLISION_RADIUS * 0.7;
-  const p = vehicle.position;
-  for (const b of goalBoxes) {
-    const xMin = b.xMin - r;
-    const xMax = b.xMax + r;
-    const zMin = b.zMin - r;
-    const zMax = b.zMax + r;
-    if (p.x <= xMin || p.x >= xMax || p.y <= zMin || p.y >= zMax) continue;
+  reset(): void {
+    for (const e of this.entries) {
+      e.anim = 0;
+      e.lifting = false;
+      e.moved = false;
+      e.mesh.visible = true;
+      this.place(e);
+    }
+    goalBoxes = this.entries.map((e) => footprint(e.side));
+  }
 
-    // Push out along the axis with the smallest penetration
-    const dxMin = p.x - xMin;
-    const dxMax = xMax - p.x;
-    const dzMin = p.y - zMin;
-    const dzMax = zMax - p.y;
-    const m = Math.min(dxMin, dxMax, dzMin, dzMax);
-    const n = new THREE.Vector2();
-    if (m === dxMin) n.set(-1, 0);
-    else if (m === dxMax) n.set(1, 0);
-    else if (m === dzMin) n.set(0, -1);
-    else n.set(0, 1);
-    p.addScaledVector(n, m);
+  private place(e: GoalEntry): void {
+    const m = e.mesh;
+    const endX = e.side * (RINK_LENGTH / 2 - 0.7);
+    const x = THREE.MathUtils.lerp(e.side * START_X, endX, e.anim);
+    m.position.set(x, Math.sin(e.anim * Math.PI) * 0.5, 0);
+    // Mouth faces centre ice; lifts and tilts back onto the boards as it moves
+    m.rotation.set(0, e.side > 0 ? Math.PI : 0, e.anim * (Math.PI / 2 - 0.1));
+  }
 
-    const vAlongN = -vehicle.velocity.dot(n);
-    if (vAlongN > 0) {
-      vehicle.velocity.addScaledVector(n, vAlongN * 1.1);
-      vehicle.velocity.multiplyScalar(0.4);
-      if (vAlongN > 0.8) return vAlongN;
+  /** Animate any goal whose behind-strip has been resurfaced. */
+  update(dt: number, ice: IceResurfacer): void {
+    let dirty = false;
+    for (const e of this.entries) {
+      if (e.moved) continue;
+      if (!e.lifting) {
+        // The board strip directly behind this net (between it and the end)
+        const back = e.side * (START_X + GOAL_DEPTH);
+        const stripMin = e.side > 0 ? back : -RINK_LENGTH / 2;
+        const stripMax = e.side > 0 ? RINK_LENGTH / 2 : back;
+        if (ice.regionCoverage(stripMin, stripMax, -GOAL_WIDTH, GOAL_WIDTH) > BEHIND_CLEAN_THRESHOLD) {
+          e.lifting = true;
+          dirty = true; // drop its footprint so the ice underneath is free
+        }
+      }
+      if (e.lifting && e.anim < 1) {
+        e.anim = Math.min(1, e.anim + dt / MOVE_SECONDS);
+        this.place(e);
+        if (e.anim >= 1) e.moved = true;
+      }
+    }
+    if (dirty) {
+      goalBoxes = this.entries
+        .filter((e) => !e.lifting && !e.moved)
+        .map((e) => footprint(e.side));
     }
   }
-  return 0;
+
+  /** Box-collision push-out for in-play nets. Returns impact speed, or 0. */
+  resolveCollision(vehicle: Vehicle): number {
+    const r = ZAM_COLLISION_RADIUS * 0.7;
+    const p = vehicle.position;
+    for (const e of this.entries) {
+      if (e.lifting || e.moved) continue;
+      const b = footprint(e.side);
+      const xMin = b.xMin - r;
+      const xMax = b.xMax + r;
+      const zMin = b.zMin - r;
+      const zMax = b.zMax + r;
+      if (p.x <= xMin || p.x >= xMax || p.y <= zMin || p.y >= zMax) continue;
+      const m = Math.min(p.x - xMin, xMax - p.x, p.y - zMin, zMax - p.y);
+      const n = new THREE.Vector2();
+      if (m === p.x - xMin) n.set(-1, 0);
+      else if (m === xMax - p.x) n.set(1, 0);
+      else if (m === p.y - zMin) n.set(0, -1);
+      else n.set(0, 1);
+      p.addScaledVector(n, m);
+      const vAlongN = -vehicle.velocity.dot(n);
+      if (vAlongN > 0) {
+        vehicle.velocity.addScaledVector(n, vAlongN * 1.1);
+        vehicle.velocity.multiplyScalar(0.4);
+        if (vAlongN > 0.8) return vAlongN;
+      }
+    }
+    return 0;
+  }
 }

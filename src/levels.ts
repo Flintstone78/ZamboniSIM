@@ -33,13 +33,15 @@ export interface LevelDef {
   bonus?: boolean;
 }
 
-// Shared difficulty curve for both ladders (tier 0..4)
+// Shared difficulty curve for both ladders (tier 0..4). Cones are gone (they
+// made a perfect score impossible); the late-game hazard is roaming skaters,
+// and `pucks` seeds how many loose pucks they get to play with.
 const TIERS = [
-  { timeLimit: 6 * 60, stands: 'none', scoreboard: false, cones: 2, pucks: 4, hallColor: '#151b22', lightIntensity: 0.85 },
-  { timeLimit: 5 * 60, stands: 'long-sides', scoreboard: false, cones: 3, pucks: 6, hallColor: '#0f141b', lightIntensity: 0.95 },
-  { timeLimit: 4.5 * 60, stands: 'all', scoreboard: false, cones: 4, pucks: 7, hallColor: '#0c1117', lightIntensity: 1.05 },
-  { timeLimit: 4 * 60, stands: 'all', scoreboard: true, cones: 5, pucks: 8, hallColor: '#0a0e14', lightIntensity: 1.1 },
-  { timeLimit: 3.5 * 60, stands: 'all', scoreboard: true, cones: 7, pucks: 10, hallColor: '#0b1018', lightIntensity: 1.15 },
+  { timeLimit: 6 * 60, stands: 'none', scoreboard: false, cones: 0, pucks: 4, hallColor: '#151b22', lightIntensity: 0.85 },
+  { timeLimit: 5 * 60, stands: 'long-sides', scoreboard: false, cones: 0, pucks: 6, hallColor: '#0f141b', lightIntensity: 0.95 },
+  { timeLimit: 4.5 * 60, stands: 'all', scoreboard: false, cones: 0, pucks: 7, hallColor: '#0c1117', lightIntensity: 1.05 },
+  { timeLimit: 4 * 60, stands: 'all', scoreboard: true, cones: 0, pucks: 8, hallColor: '#0a0e14', lightIntensity: 1.1 },
+  { timeLimit: 3.5 * 60, stands: 'all', scoreboard: true, cones: 0, pucks: 10, hallColor: '#0b1018', lightIntensity: 1.15 },
 ] as const;
 
 interface TierLabel {

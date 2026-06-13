@@ -22,7 +22,8 @@ import { createArena } from './arena';
 import { Obstacles } from './obstacles';
 import { AudioEngine } from './audio';
 import { Gate } from './gate';
-import { createGoals, resolveGoalCollision } from './goals';
+import { Goals } from './goals';
+import { Skaters } from './skaters';
 import {
   LevelDef,
   EUROPE_LEVELS,
@@ -57,19 +58,20 @@ export class Game {
   private obstacles: Obstacles;
   private audio = new AudioEngine();
   private gate!: Gate; // rebuilt per level (its boards move with rink width)
+  private goals = new Goals();
+  private skaters = new Skaters();
 
   private state: GameState = 'splash';
   private level: LevelDef = EUROPE_LEVELS[0];
   private standard: RinkStandard = 'europa';
   private rink: Rink | null = null;
   private arenaGroup: THREE.Group | null = null;
-  private goalsGroup: THREE.Group | null = null;
 
   private cameraMode: CameraMode = 'chase';
   private camPos = new THREE.Vector3();
   private elapsed = 0;
   private collisions = 0;
-  private coneHits = 0;
+  private skaterHits = 0;
   private minimapTimer = 0;
   private menuSpin = 0;
 
@@ -102,15 +104,12 @@ export class Game {
     );
 
     this.obstacles = new Obstacles({
-      onConeHit: () => {
-        if (this.state !== 'playing') return;
-        this.coneHits++;
-        this.audio.cone();
-        this.hud.showToast('Cone! −150 pts');
-      },
+      onConeHit: () => {}, // cones retired; kept for the interface
       onPuckHit: () => this.audio.puck(),
     });
     this.scene.add(this.obstacles.group);
+    this.scene.add(this.goals.group);
+    this.scene.add(this.skaters.group);
 
     this.hud = new Hud({
       onRestart: () => this.startLevel(this.level.id),
@@ -197,10 +196,9 @@ export class Game {
     this.standard = this.level.region;
     setRinkStandard(this.standard);
 
-    // Swap out the per-level world: rink (width may change), arena, goals, gate
+    // Swap out the per-level world: rink (width may change), arena, gate
     if (this.rink) this.scene.remove(this.rink.group);
     if (this.arenaGroup) this.scene.remove(this.arenaGroup);
-    if (this.goalsGroup) this.scene.remove(this.goalsGroup);
     this.scene.remove(this.gate.group);
     this.gate = new Gate();
     this.scene.add(this.gate.group);
@@ -209,8 +207,8 @@ export class Game {
     this.ice.attachColorMap(this.rink.colorTexture, this.rink.colorCanvas);
     this.scene.add(this.rink.group);
     this.arenaGroup = createArena(this.scene, this.level);
-    this.goalsGroup = createGoals();
-    this.scene.add(this.goalsGroup);
+    this.goals.reset();
+    this.skaters.reset();
 
     this.ice.reset();
     this.vehicle.reset(this.gate.spawn.x, this.gate.spawn.z, this.gate.spawn.heading);
@@ -222,7 +220,7 @@ export class Game {
     );
     this.elapsed = 0;
     this.collisions = 0;
-    this.coneHits = 0;
+    this.skaterHits = 0;
     this.state = 'playing';
     this.hud.hideFinish();
     this.hud.hideMenu();
@@ -249,9 +247,22 @@ export class Game {
       if (this.elapsed > 0.3) this.gate.open();
 
       this.vehicle.update(dt, this.input.throttle(0), this.input.steer(0));
-      const goalImpact = resolveGoalCollision(this.vehicle);
+      const goalImpact = this.goals.resolveCollision(this.vehicle);
       if (goalImpact > 0) this.vehicle.registerHit(goalImpact);
+      this.goals.update(dt, this.ice);
       this.obstacles.update(dt, this.vehicle.position, this.vehicle.velocity);
+
+      // In the final minute, impatient players spill onto the ice
+      if (this.level.timeLimit - this.elapsed <= 60 && !this.skaters.isActive) {
+        this.skaters.spawn();
+        this.hud.showToast('Players on the ice — dodge them!');
+      }
+      const skaterImpact = this.skaters.update(dt, this.vehicle.position, this.obstacles);
+      if (skaterImpact > 0) {
+        this.skaterHits++;
+        this.audio.crash(1.4);
+        this.hud.showToast('Knocked a player! −150 pts');
+      }
 
       // The conditioner only lays clean ice while down and rolling forwards
       if (this.vehicle.bladeDown && this.vehicle.forwardSpeed > 0.3) {
@@ -284,7 +295,7 @@ export class Game {
       this.ice.precision,
       Math.max(0, this.level.timeLimit - this.elapsed),
       this.collisions,
-      this.coneHits,
+      this.skaterHits,
       this.currentScore(),
       this.vehicle.forwardSpeed,
     );
@@ -307,7 +318,7 @@ export class Game {
       Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND) *
         this.ice.coverage -
       this.collisions * SCORE_COLLISION_PENALTY -
-      this.coneHits * SCORE_CONE_PENALTY
+      this.skaterHits * SCORE_CONE_PENALTY
     );
   }
 
@@ -320,7 +331,7 @@ export class Game {
       ? Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND)
       : 0;
     const collisionPenalty = this.collisions * SCORE_COLLISION_PENALTY;
-    const conePenalty = this.coneHits * SCORE_CONE_PENALTY;
+    const conePenalty = this.skaterHits * SCORE_CONE_PENALTY;
     const total = coverageScore + precisionScore + timeScore - collisionPenalty - conePenalty;
     const stars = !success ? 0 : total >= 13000 ? 3 : total >= 10500 ? 2 : 1;
     if (success) saveStars(this.level.id, stars);

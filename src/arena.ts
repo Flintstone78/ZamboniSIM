@@ -1,7 +1,11 @@
 import * as THREE from 'three';
-import { RINK_LENGTH, RINK_WIDTH } from './constants';
+import { RINK_LENGTH, RINK_WIDTH, GATE_X_MIN, GATE_X_MAX } from './constants';
 import { loadTextureInto } from './assets';
 import type { LevelDef } from './levels';
+
+// The zamboni tunnel cuts a vomitory-style gap through the -Z stands so the
+// equipment-room corridor isn't walled in (and the reveal camera isn't buried).
+const GATE_GAP: [number, number] = [GATE_X_MIN - 2, GATE_X_MAX + 2];
 
 /**
  * Per-tier arena recipe. The five career tiers escalate from a cold practice
@@ -102,10 +106,11 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
     farOff: number,
     yNear: number,
     yFar: number,
+    xCenter = 0,
   ) => {
     const half = length / 2;
     const corner = (along: number, d: number, y: number): [number, number, number] =>
-      alongX ? [along, y, side * d] : [side * d, y, along];
+      alongX ? [xCenter + along, y, side * d] : [side * d, y, along];
     const positions = new Float32Array([
       ...corner(-half, nearOff, yNear),
       ...corner(half, nearOff, yNear),
@@ -128,7 +133,8 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
     group.add(new THREE.Mesh(geo, mat));
   };
 
-  // One deck of stepped rows + its crowd plane. Returns the deck's top edge.
+  // One deck of stepped rows + its crowd plane. `gap` (an x-range, long sides
+  // only) punches a vomitory tunnel through the rows for the zamboni gate.
   const deck = (
     length: number,
     alongX: boolean,
@@ -136,22 +142,41 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
     offset: number,
     baseY: number,
     rows: number,
+    gap: [number, number] | null = null,
   ): { far: number; top: number } => {
+    const spans: Array<[number, number]> =
+      gap && alongX
+        ? [
+            [-length / 2, gap[0]],
+            [gap[1], length / 2],
+          ]
+        : [[-length / 2, length / 2]];
+
     for (let i = 0; i < rows; i++) {
-      const geo = alongX
-        ? new THREE.BoxGeometry(length, TIER_HEIGHT, TIER_DEPTH)
-        : new THREE.BoxGeometry(TIER_DEPTH, TIER_HEIGHT, length);
-      const m = new THREE.Mesh(geo, seatMats[i % seatMats.length]);
       const dist = offset + i * TIER_DEPTH;
       const y = baseY + TIER_HEIGHT / 2 + i * TIER_HEIGHT;
-      if (alongX) m.position.set(0, y, side * dist);
-      else m.position.set(side * dist, y, 0);
-      m.castShadow = i > rows - 3;
-      group.add(m);
+      for (const [a, b] of spans) {
+        if (b - a < 0.5) continue;
+        const segLen = b - a;
+        const mid = (a + b) / 2;
+        const geo = alongX
+          ? new THREE.BoxGeometry(segLen, TIER_HEIGHT, TIER_DEPTH)
+          : new THREE.BoxGeometry(TIER_DEPTH, TIER_HEIGHT, segLen);
+        const m = new THREE.Mesh(geo, seatMats[i % seatMats.length]);
+        if (alongX) m.position.set(mid, y, side * dist);
+        else m.position.set(side * dist, y, mid);
+        m.castShadow = i > rows - 3;
+        group.add(m);
+      }
     }
     const near = offset - TIER_DEPTH / 2;
     const far = offset + (rows - 1) * TIER_DEPTH + TIER_DEPTH / 2;
-    crowdPlane(length, alongX, side, near, far, baseY + TIER_HEIGHT + 0.08, baseY + rows * TIER_HEIGHT + 0.08);
+    const yNear = baseY + TIER_HEIGHT + 0.08;
+    const yFar = baseY + rows * TIER_HEIGHT + 0.08;
+    for (const [a, b] of spans) {
+      if (b - a < 0.5) continue;
+      crowdPlane(b - a, alongX, side, near, far, yNear, yFar, (a + b) / 2);
+    }
     return { far, top: baseY + rows * TIER_HEIGHT };
   };
 
@@ -160,10 +185,16 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
   const longOff = RINK_WIDTH / 2 + 4;
   const shortOff = RINK_LENGTH / 2 + 4;
 
-  const buildSide = (length: number, alongX: boolean, side: 1 | -1, baseOff: number) => {
-    const lower = deck(length, alongX, side, baseOff, 0, spec.rows);
+  const buildSide = (
+    length: number,
+    alongX: boolean,
+    side: 1 | -1,
+    baseOff: number,
+    gap: [number, number] | null = null,
+  ) => {
+    // Only the lower deck needs the tunnel; the upper deck sits well clear
+    const lower = deck(length, alongX, side, baseOff, 0, spec.rows, gap);
     if (spec.upperRows > 0) {
-      // Upper deck set back behind a suite ring and lifted above the lower bowl
       const upperOff = lower.far + 2.6;
       deck(length, alongX, side, upperOff, lower.top + 2.4, spec.upperRows);
     }
@@ -171,7 +202,7 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
 
   if (spec.rows > 0) {
     buildSide(longLen, true, 1, longOff);
-    buildSide(longLen, true, -1, longOff);
+    buildSide(longLen, true, -1, longOff, GATE_GAP); // -Z side has the gate
     if (spec.allSides) {
       buildSide(shortLen, false, 1, shortOff);
       buildSide(shortLen, false, -1, shortOff);
