@@ -23,7 +23,8 @@ stjärnor på alla fyra för att låsa upp bonusnivån **Landslagscampen**.
 
 Rinken kan köras i **Europa** (30 m bred) eller **Nordamerika** (smalare 26 m,
 NHL-mått). Varje nivå börjar i maskinrummet – porten i sargen glider upp och du
-kör ut på isen.
+kör ut på isen. Precis som i en riktig spolning står målburarna avlyfta från
+mållinjen och parkerade mot långsidornas sarg medan du jobbar.
 
 ### Kontroller
 

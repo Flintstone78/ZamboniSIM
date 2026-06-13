@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  GOAL_LINE_X,
+  RINK_WIDTH,
   GOAL_WIDTH,
   GOAL_DEPTH,
   GOAL_HEIGHT,
@@ -15,28 +15,47 @@ interface GoalBox {
   zMax: number;
 }
 
-const BOXES: GoalBox[] = [1, -1].map((side) => {
-  const xNear = side * GOAL_LINE_X;
-  const xFar = side * (GOAL_LINE_X + GOAL_DEPTH);
-  return {
-    xMin: Math.min(xNear, xFar),
-    xMax: Math.max(xNear, xFar),
-    zMin: -GOAL_WIDTH / 2,
-    zMax: GOAL_WIDTH / 2,
-  };
-});
+// During a resurfacing the nets are lifted off the goal line and parked
+// against the long-side boards, clear of the driving path. Their footprint
+// (collision + no-clean zone) is recomputed per level because the board they
+// rest against moves with the rink width. One net per long side, kept away
+// from the equipment-room gate on the -Z board (x -19..-15).
+let goalBoxes: GoalBox[] = [];
 
-/** True under/inside a goal cage (these cells can't be resurfaced). */
+interface ParkSpot {
+  x: number; // centre of the net's mouth along the boards
+  boardSign: 1 | -1; // +1 = +Z board, -1 = -Z board
+}
+const PARK_SPOTS: ParkSpot[] = [
+  { x: -10, boardSign: 1 },
+  { x: 10, boardSign: -1 },
+];
+
+function computeBoxes(): GoalBox[] {
+  const boardZ = RINK_WIDTH / 2;
+  return PARK_SPOTS.map(({ x, boardSign }) => {
+    const back = boardSign * boardZ;
+    const mouth = boardSign * (boardZ - GOAL_DEPTH);
+    return {
+      xMin: x - GOAL_WIDTH / 2,
+      xMax: x + GOAL_WIDTH / 2,
+      zMin: Math.min(back, mouth),
+      zMax: Math.max(back, mouth),
+    };
+  });
+}
+
+/** True under/inside a parked goal cage (these cells can't be resurfaced). */
 export function inGoalZone(x: number, z: number, margin = 0.25): boolean {
-  return BOXES.some(
+  return goalBoxes.some(
     (b) =>
       x > b.xMin - margin && x < b.xMax + margin && z > b.zMin - margin && z < b.zMax + margin,
   );
 }
 
-/** Red frame + net at both ends, opening toward centre ice. */
-export function createGoals(): THREE.Group {
-  const group = new THREE.Group();
+/** A single net with its mouth opening toward local +Z, net sloping back to -Z. */
+function buildGoalMesh(): THREE.Group {
+  const goal = new THREE.Group();
   const red = new THREE.MeshStandardMaterial({ color: '#c8102e', roughness: 0.45 });
   const netMat = new THREE.MeshStandardMaterial({
     color: '#e8eef4',
@@ -46,60 +65,73 @@ export function createGoals(): THREE.Group {
     side: THREE.DoubleSide,
   });
 
-  for (const side of [1, -1]) {
-    const goal = new THREE.Group();
-    const postGeo = new THREE.CylinderGeometry(0.05, 0.05, GOAL_HEIGHT, 10);
-    for (const z of [-GOAL_WIDTH / 2, GOAL_WIDTH / 2]) {
-      const post = new THREE.Mesh(postGeo, red);
-      post.position.set(0, GOAL_HEIGHT / 2, z);
-      post.castShadow = true;
-      goal.add(post);
-    }
-    const bar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.05, GOAL_WIDTH + 0.1, 10),
-      red,
-    );
-    bar.rotation.x = Math.PI / 2;
-    bar.position.set(0, GOAL_HEIGHT, 0);
-    goal.add(bar);
+  const postGeo = new THREE.CylinderGeometry(0.05, 0.05, GOAL_HEIGHT, 10);
+  for (const x of [-GOAL_WIDTH / 2, GOAL_WIDTH / 2]) {
+    const post = new THREE.Mesh(postGeo, red);
+    post.position.set(x, GOAL_HEIGHT / 2, 0);
+    post.castShadow = true;
+    goal.add(post);
+  }
+  const bar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.05, GOAL_WIDTH + 0.1, 10),
+    red,
+  );
+  bar.rotation.z = Math.PI / 2;
+  bar.position.set(0, GOAL_HEIGHT, 0);
+  goal.add(bar);
 
-    // Net: sloped back sheet + two side sheets
-    const backGeo = new THREE.PlaneGeometry(
-      Math.hypot(GOAL_DEPTH, GOAL_HEIGHT),
-      GOAL_WIDTH,
-    );
-    const backNet = new THREE.Mesh(backGeo, netMat);
-    backNet.rotation.z = Math.PI / 2 - Math.atan2(GOAL_HEIGHT, GOAL_DEPTH);
-    backNet.rotation.y = Math.PI / 2;
-    backNet.rotation.order = 'YZX';
-    backNet.position.set(GOAL_DEPTH / 2, GOAL_HEIGHT / 2, 0);
-    goal.add(backNet);
-    for (const z of [-GOAL_WIDTH / 2, GOAL_WIDTH / 2]) {
-      const sideShape = new THREE.Shape();
-      sideShape.moveTo(0, 0);
-      sideShape.lineTo(GOAL_DEPTH, 0);
-      sideShape.lineTo(0, GOAL_HEIGHT);
-      sideShape.closePath();
-      const sideNet = new THREE.Mesh(new THREE.ShapeGeometry(sideShape), netMat);
-      sideNet.position.set(0, 0, z);
-      goal.add(sideNet);
-    }
+  // Net: sloped back sheet (mouth at z=0, base of net at z=-GOAL_DEPTH)
+  const backNet = new THREE.Mesh(
+    new THREE.PlaneGeometry(GOAL_WIDTH, Math.hypot(GOAL_DEPTH, GOAL_HEIGHT)),
+    netMat,
+  );
+  backNet.rotation.x = -Math.atan2(GOAL_DEPTH, GOAL_HEIGHT);
+  backNet.position.set(0, GOAL_HEIGHT / 2, -GOAL_DEPTH / 2);
+  goal.add(backNet);
+  for (const x of [-GOAL_WIDTH / 2, GOAL_WIDTH / 2]) {
+    const sideShape = new THREE.Shape();
+    sideShape.moveTo(0, 0);
+    sideShape.lineTo(0, GOAL_HEIGHT);
+    sideShape.lineTo(-GOAL_DEPTH, 0);
+    sideShape.closePath();
+    const sideNet = new THREE.Mesh(new THREE.ShapeGeometry(sideShape), netMat);
+    sideNet.rotation.y = -Math.PI / 2;
+    sideNet.position.set(x, 0, 0);
+    goal.add(sideNet);
+  }
+  return goal;
+}
 
-    goal.position.x = side * GOAL_LINE_X;
-    if (side < 0) goal.rotation.y = Math.PI;
+/** Both nets parked against the long-side boards, mouths facing centre ice. */
+export function createGoals(): THREE.Group {
+  goalBoxes = computeBoxes();
+  const group = new THREE.Group();
+  const boardZ = RINK_WIDTH / 2;
+
+  for (const { x, boardSign } of PARK_SPOTS) {
+    const goal = buildGoalMesh();
+    // Mouth faces centre ice; net back sits against the board.
+    if (boardSign > 0) {
+      // +Z board: opening toward -Z (rotate 180°), back at +boardZ
+      goal.rotation.y = Math.PI;
+      goal.position.set(x, 0, boardZ - GOAL_DEPTH);
+    } else {
+      // -Z board: opening toward +Z (no rotation), back at -boardZ
+      goal.position.set(x, 0, -boardZ + GOAL_DEPTH);
+    }
     group.add(goal);
   }
   return group;
 }
 
 /**
- * Push a vehicle out of the goal cages (box collision). Slows it down like
- * the boards do; returns the impact speed when a new hit lands, else 0.
+ * Push a vehicle out of the parked goal cages (box collision). Slows it down
+ * like the boards do; returns the impact speed when a new hit lands, else 0.
  */
 export function resolveGoalCollision(vehicle: Vehicle): number {
-  const r = ZAM_COLLISION_RADIUS * 0.75; // cages are smaller than the boards
+  const r = ZAM_COLLISION_RADIUS * 0.7;
   const p = vehicle.position;
-  for (const b of BOXES) {
+  for (const b of goalBoxes) {
     const xMin = b.xMin - r;
     const xMax = b.xMax + r;
     const zMin = b.zMin - r;
