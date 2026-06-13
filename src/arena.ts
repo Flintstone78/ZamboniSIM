@@ -209,6 +209,71 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
     }
   }
 
+  // Team benches + penalty boxes nestled against the +Z boards (rink-side
+  // furniture that sells the "real arena" read). Built when there are stands.
+  if (spec.rows > 0) {
+    const zBench = RINK_WIDTH / 2 + 1.0;
+    const darkMat = new THREE.MeshStandardMaterial({ color: '#202830', roughness: 0.8 });
+    const seatMat = new THREE.MeshStandardMaterial({ color: '#b71c1c', roughness: 0.7 });
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: '#cfe8ff', transparent: true, opacity: 0.16, roughness: 0.05, side: THREE.DoubleSide,
+    });
+    const box = (w: number, x: number, seatColor?: string) => {
+      const g = new THREE.Group();
+      const back = new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, 1.6), darkMat);
+      back.position.set(0, 0.55, 0);
+      g.add(back);
+      const seat = new THREE.Mesh(
+        new THREE.BoxGeometry(w - 0.4, 0.18, 0.5),
+        seatColor ? new THREE.MeshStandardMaterial({ color: seatColor, roughness: 0.7 }) : seatMat,
+      );
+      seat.position.set(0, 0.55, 0.3);
+      g.add(seat);
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(w, 0.8, 0.04), glassMat);
+      glass.position.set(0, 1.5, -0.7);
+      g.add(glass);
+      g.position.set(x, 0, zBench);
+      group.add(g);
+    };
+    box(7, -9, '#1565c0'); // home bench
+    box(7, 9, '#c62828'); // away bench
+    box(2.6, -3); // penalty box
+    box(2.6, 3); // penalty box
+  }
+
+  // Glowing ribbon board around the lower-bowl fascia (modern-arena look)
+  if (spec.rows > 0 && level.tier >= 2) {
+    const ribbonMat = new THREE.MeshStandardMaterial({
+      color: '#0a1622', emissive: '#1d6fb8', emissiveIntensity: 1.1,
+    });
+    loadTextureInto('/assets/board_ads.png', (tex) => {
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.repeat.set(8, 1);
+      ribbonMat.map = tex;
+      ribbonMat.emissiveMap = tex;
+      ribbonMat.color.set('#ffffff');
+      ribbonMat.emissive.set('#9fd0ff');
+      ribbonMat.needsUpdate = true;
+    });
+    const y = spec.rows * TIER_HEIGHT + 0.5;
+    const ring = (len: number, alongX: boolean, off: number) => {
+      const geo = new THREE.PlaneGeometry(len, 0.7);
+      for (const side of [1, -1] as const) {
+        const m = new THREE.Mesh(geo, ribbonMat);
+        if (alongX) {
+          m.position.set(0, y, side * off);
+          m.rotation.y = side > 0 ? Math.PI : 0;
+        } else {
+          m.position.set(side * off, y, 0);
+          m.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        }
+        group.add(m);
+      }
+    };
+    ring(RINK_LENGTH + 8, true, RINK_WIDTH / 2 + 3.6);
+    if (spec.allSides) ring(RINK_WIDTH + 4, false, RINK_LENGTH / 2 + 3.6);
+  }
+
   // ---- Roof / enclosure ----
   if (spec.domed) {
     // Globen-style: a ring wall topped by a spherical dome we sit inside
