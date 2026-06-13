@@ -174,6 +174,8 @@ export class Hud {
     this.levelName.textContent = `${level.name} · ${level.division}`;
   }
 
+  private boostEl = el('boost');
+  private boostFill = el('boost-fill');
   private combo = el('combo');
   private comboMult = this.combo.querySelector('.mult') as HTMLElement;
   private comboBar = this.combo.querySelector('.bar i') as HTMLElement;
@@ -189,6 +191,13 @@ export class Hud {
     this.combo.style.opacity = '1';
     this.comboMult.textContent = `x${multiplier}`;
     this.comboBar.style.width = `${Math.max(0, Math.min(1, fill)) * 100}%`;
+  }
+
+  /** Turbo reserve bar (0..1) and whether it's currently firing. */
+  setBoost(meter: number, active: boolean): void {
+    this.boostFill.style.width = `${Math.max(0, Math.min(1, meter)) * 100}%`;
+    this.boostEl.classList.toggle('active', active);
+    this.boostEl.classList.toggle('low', meter < 0.15);
   }
 
   /** Big celebratory popup (combo up, net cleared, perfect line). */

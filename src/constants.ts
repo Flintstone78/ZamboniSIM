@@ -86,3 +86,17 @@ export const COMBO_STEP = 22;
 export const COMBO_MAX = 5;
 export const SCORE_FLOW_PER_CELL = 0.22;
 export const COMBO_GRACE = 2.0; // seconds the streak survives without painting
+
+// Turbo boost (hold Shift): a drainable meter that briefly lifts the speed cap
+// and acceleration at the cost of grip (more slide). Refills when not boosting.
+export const BOOST_SPEED_MULT = 1.6;
+export const BOOST_ACCEL_MULT = 1.7;
+export const BOOST_DRAIN = 0.5; // meter/second while boosting
+export const BOOST_REFILL = 0.22; // meter/second while not
+
+// Power-ups: floating pickups that spawn periodically on the ice.
+export const POWERUP_MAX = 3; // active at once
+export const POWERUP_INTERVAL = 9; // seconds between spawns
+export const POWERUP_RADIUS = 0.6;
+export const POWERUP_TIME_BONUS = 15; // seconds added by a CLOCK
+export const POWERUP_FLOW_SECONDS = 8; // duration of a 2X FLOW surge

@@ -14,6 +14,10 @@ import {
   COMBO_STEP,
   COMBO_MAX,
   COMBO_GRACE,
+  BOOST_DRAIN,
+  BOOST_REFILL,
+  POWERUP_TIME_BONUS,
+  POWERUP_FLOW_SECONDS,
   setRinkStandard,
   RinkStandard,
 } from './constants';
@@ -29,6 +33,7 @@ import { Gate } from './gate';
 import { Goals } from './goals';
 import { Skaters } from './skaters';
 import { IceSpray } from './particles';
+import { PowerUps, PowerType } from './powerups';
 import {
   LevelDef,
   EUROPE_LEVELS,
@@ -66,6 +71,7 @@ export class Game {
   private goals = new Goals();
   private skaters = new Skaters();
   private spray = new IceSpray();
+  private powerups: PowerUps;
 
   // Combo / flow state
   private combo = 0; // fresh cells laid in the current streak
@@ -75,6 +81,9 @@ export class Game {
   private prevPainted = 0;
   private prevOverlaps = 0;
   private shake = 0;
+  private boostMeter = 1; // 0..1 turbo reserve
+  private boosting = false;
+  private flowSurge = 0; // seconds of 2x flow left (from a power-up)
 
   private state: GameState = 'splash';
   private level: LevelDef = EUROPE_LEVELS[0];
@@ -128,6 +137,8 @@ export class Game {
     this.scene.add(this.goals.group);
     this.scene.add(this.skaters.group);
     this.scene.add(this.spray.points);
+    this.powerups = new PowerUps((type) => this.collectPowerUp(type));
+    this.scene.add(this.powerups.group);
 
     this.hud = new Hud({
       onRestart: () => this.startLevel(this.level.id),
@@ -246,6 +257,9 @@ export class Game {
     this.prevPainted = 0;
     this.prevOverlaps = 0;
     this.shake = 0;
+    this.boostMeter = 1;
+    this.flowSurge = 0;
+    this.powerups.reset();
     this.hud.setCombo(1, 0);
     this.state = 'playing';
     this.hud.hideFinish();
@@ -272,7 +286,18 @@ export class Game {
       this.elapsed += dt;
       if (this.elapsed > 0.3) this.gate.open();
 
-      this.vehicle.update(dt, this.input.throttle(0), this.input.steer(0));
+      const throttle = this.input.throttle(0);
+      // Turbo: drains the meter for extra speed/accel; refills when off
+      const boosting = this.input.boosting(0) && this.boostMeter > 0.04 && throttle > 0;
+      this.boostMeter = boosting
+        ? Math.max(0, this.boostMeter - BOOST_DRAIN * dt)
+        : Math.min(1, this.boostMeter + BOOST_REFILL * dt);
+      this.vehicle.update(dt, throttle, this.input.steer(0), boosting ? 1 : 0);
+      this.boosting = boosting;
+
+      this.powerups.update(dt, this.vehicle.position);
+      this.flowSurge = Math.max(0, this.flowSurge - dt);
+
       const goalImpact = this.goals.resolveCollision(this.vehicle);
       if (goalImpact > 0) this.vehicle.registerHit(goalImpact);
       if (this.goals.update(dt, this.ice) > 0) {
@@ -302,7 +327,7 @@ export class Game {
         const bladeX = this.vehicle.position.x - fwd.x * SWATH_REAR_OFFSET;
         const bladeZ = this.vehicle.position.y - fwd.y * SWATH_REAR_OFFSET;
         this.ice.paint(bladeX, bladeZ, this.vehicle.heading, this.elapsed);
-        this.spray.emit(bladeX, bladeZ, this.vehicle.heading, 3);
+        this.spray.emit(bladeX, bladeZ, this.vehicle.heading, this.boosting ? 6 : 3);
       } else {
         this.ice.liftBlade();
       }
@@ -336,6 +361,7 @@ export class Game {
       this.currentScore(),
       this.vehicle.forwardSpeed,
     );
+    this.hud.setBoost(this.boostMeter, this.boosting);
     this.minimapTimer -= dt;
     if (this.minimapTimer <= 0) {
       this.minimapTimer = 0.2;
@@ -345,6 +371,20 @@ export class Game {
         (this.vehicle.position.y + RINK_WIDTH / 2) / RINK_WIDTH,
         this.vehicle.heading,
       );
+    }
+  }
+
+  private collectPowerUp(type: PowerType): void {
+    this.audio.cheer(0.6);
+    if (type === 'time') {
+      this.elapsed = Math.max(0, this.elapsed - POWERUP_TIME_BONUS);
+      this.hud.popup(`+${POWERUP_TIME_BONUS}s`);
+    } else if (type === 'boost') {
+      this.boostMeter = 1;
+      this.hud.popup('TURBO FULL!');
+    } else {
+      this.flowSurge = POWERUP_FLOW_SECONDS;
+      this.hud.popup('2X FLOW!');
     }
   }
 
@@ -367,7 +407,9 @@ export class Game {
     } else if (scraping && dPaint > 0) {
       this.combo += dPaint;
       this.comboTimer = COMBO_GRACE;
-      this.flowBonus += dPaint * this.multiplier * SCORE_FLOW_PER_CELL;
+      // A flow-surge power-up doubles the effective multiplier while it lasts
+      const eff = this.flowSurge > 0 ? Math.min(COMBO_MAX, this.multiplier * 2) : this.multiplier;
+      this.flowBonus += dPaint * eff * SCORE_FLOW_PER_CELL;
       const m = Math.min(COMBO_MAX, 1 + Math.floor(this.combo / COMBO_STEP));
       if (m > this.multiplier) {
         this.multiplier = m;

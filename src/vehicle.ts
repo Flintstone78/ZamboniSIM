@@ -9,6 +9,8 @@ import {
   MAX_STEER,
   LATERAL_GRIP,
   ZAM_COLLISION_RADIUS,
+  BOOST_SPEED_MULT,
+  BOOST_ACCEL_MULT,
 } from './constants';
 import { rinkSignedDistance, rinkBoundaryNormal } from './rink';
 
@@ -72,12 +74,15 @@ export class Vehicle {
     this.events.onCollision(impactSpeed);
   }
 
-  update(dt: number, throttle: number, steerInput: number): void {
+  update(dt: number, throttle: number, steerInput: number, boost = 0): void {
     this.collisionCooldown = Math.max(0, this.collisionCooldown - dt);
 
     // Steering eases toward the input for a heavier, machine-like feel
     const targetSteer = steerInput * MAX_STEER;
     this.steer += (targetSteer - this.steer) * Math.min(1, dt * 6);
+
+    const accel = ENGINE_ACCEL * (1 + boost * (BOOST_ACCEL_MULT - 1));
+    const maxFwd = MAX_SPEED_FWD * (1 + boost * (BOOST_SPEED_MULT - 1));
 
     const fwd = this.forward;
     let vF = this.velocity.dot(fwd);
@@ -85,17 +90,18 @@ export class Vehicle {
 
     // Throttle / braking. Opposing input brakes before it reverses.
     if (throttle > 0) {
-      vF += (vF < -0.05 ? BRAKE_DECEL : ENGINE_ACCEL) * throttle * dt;
+      vF += (vF < -0.05 ? BRAKE_DECEL : accel) * throttle * dt;
     } else if (throttle < 0) {
-      vF += (vF > 0.05 ? BRAKE_DECEL : ENGINE_ACCEL) * throttle * dt;
+      vF += (vF > 0.05 ? BRAKE_DECEL : accel) * throttle * dt;
     } else {
       vF -= Math.sign(vF) * Math.min(Math.abs(vF), ROLL_DRAG * dt);
     }
-    vF = THREE.MathUtils.clamp(vF, -MAX_SPEED_REV, MAX_SPEED_FWD);
+    vF = THREE.MathUtils.clamp(vF, -MAX_SPEED_REV, maxFwd);
 
-    // Yaw from the bicycle model; sideways slide bleeds off slowly (ice!)
+    // Yaw from the bicycle model; sideways slide bleeds off slowly (ice!).
+    // Boosting trades grip for a looser, faster, more skiddy feel.
     this.heading += (vF / WHEELBASE) * Math.tan(this.steer) * dt;
-    lateral.multiplyScalar(Math.max(0, 1 - LATERAL_GRIP * dt));
+    lateral.multiplyScalar(Math.max(0, 1 - LATERAL_GRIP * (1 - boost * 0.4) * dt));
 
     const newFwd = this.forward;
     this.velocity.copy(lateral).addScaledVector(newFwd, vF);
@@ -221,5 +227,12 @@ export class Input {
   /** Key codes that toggle the given player's blade. */
   bladeCodes(player: number): string[] {
     return this.keysFor(player).flatMap((k) => k.blade);
+  }
+
+  /** Turbo held (Shift). Player 1 in co-op uses the right control key. */
+  boosting(player: number): boolean {
+    return player === 1
+      ? this.has(['ControlRight', 'ShiftRight'])
+      : this.has(['ShiftLeft', 'ShiftRight']);
   }
 }

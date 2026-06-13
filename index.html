@@ -54,6 +54,22 @@
       #hud-speed { bottom: 16px; left: 16px; font-size: 14px; color: #c4d8ec; }
       #hud-speed .value { font-size: 22px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
 
+      #boost {
+        bottom: 112px; left: 16px; width: 150px; padding: 8px 12px;
+      }
+      #boost .label {
+        font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+        color: #9fc4e8; margin-bottom: 5px;
+      }
+      #boost .track { height: 9px; border-radius: 5px; overflow: hidden; background: rgba(255,255,255,0.12); }
+      #boost .fill {
+        height: 100%; width: 100%;
+        background: linear-gradient(90deg, #ff8a3d, #ffd54f);
+        transition: width 0.08s linear;
+      }
+      #boost.active .label { color: #ffd54f; }
+      #boost.low .fill { background: #6b7785; }
+
       #hud-help {
         bottom: 16px; left: 50%; transform: translateX(-50%);
         font-size: 12.5px; color: #8fb2d4; text-align: center;
@@ -260,6 +276,11 @@
       <span class="value" id="speed-value">0</span> km/h
     </div>
 
+    <div id="boost" class="hud panel">
+      <div class="label">Turbo · SHIFT</div>
+      <div class="track"><div class="fill" id="boost-fill"></div></div>
+    </div>
+
     <div id="combo" class="hud">
       <span class="mult">x2</span>
       <span class="label">COMBO</span>
@@ -272,8 +293,8 @@
 
     <div id="hud-help" class="hud">
       <kbd>W</kbd>/<kbd>S</kbd> throttle/reverse &nbsp; <kbd>A</kbd>/<kbd>D</kbd> steer &nbsp;
-      <kbd>SPACE</kbd> blade &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>M</kbd> sound &nbsp;
-      <kbd>R</kbd> restart &nbsp; <kbd>ESC</kbd> menu
+      <kbd>SPACE</kbd> blade &nbsp; <kbd>SHIFT</kbd> turbo &nbsp; <kbd>C</kbd> camera &nbsp;
+      <kbd>M</kbd> sound &nbsp; <kbd>R</kbd> restart &nbsp; <kbd>ESC</kbd> menu
     </div>
 
     <div id="toast" class="hud"></div>
