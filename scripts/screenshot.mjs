@@ -14,13 +14,16 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('404')) errors.push(m.text()); });
 
-// Menu screenshot first
+// Splash then menu screenshots
 await page.goto('http://localhost:4173', { waitUntil: 'networkidle' });
 await page.waitForTimeout(2000);
+await page.screenshot({ path: '/tmp/splash.png' });
+await page.keyboard.press('Enter'); // dismiss splash into the level menu
+await page.waitForTimeout(800);
 await page.screenshot({ path: '/tmp/menu.png' });
 
 // Autostart into the SHL arena, then drive a resurfacing lap via tick()
-await page.goto('http://localhost:4173/?autostart=1&level=shl', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:4173/?autostart=1&level=eu4', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1500);
 
 // Reveal shot from inside the equipment room (sim barely advanced)

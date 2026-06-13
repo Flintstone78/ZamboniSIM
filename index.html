@@ -187,16 +187,16 @@
     <div id="app"></div>
 
     <div id="hud-progress" class="hud panel">
-      <div class="label"><span>Spolad is</span><span id="progress-pct">0%</span></div>
+      <div class="label"><span>Resurfaced</span><span id="progress-pct">0%</span></div>
       <div id="progress-bar-track"><div id="progress-bar-fill"></div></div>
       <canvas id="minimap" width="252" height="126"></canvas>
     </div>
 
     <div id="hud-stats" class="hud panel">
-      <div class="row">Tid <span class="value" id="time-value">0:00</span></div>
+      <div class="row">Time <span class="value" id="time-value">0:00</span></div>
       <div class="row">Precision <span class="value" id="precision-value">100%</span></div>
-      <div class="row">Krockar <span class="value" id="collision-value">0</span></div>
-      <div class="row">Hinder <span class="value" id="cone-value">0</span></div>
+      <div class="row">Crashes <span class="value" id="collision-value">0</span></div>
+      <div class="row">Obstacles <span class="value" id="cone-value">0</span></div>
       <div class="row"><span id="score-value">0</span></div>
     </div>
 
@@ -204,13 +204,13 @@
       <span class="value" id="speed-value">0</span> km/h
     </div>
 
-    <div id="blade-indicator" class="hud panel">SKRAPA UPPE – tryck SPACE</div>
+    <div id="blade-indicator" class="hud panel">BLADE UP – press SPACE</div>
     <div id="level-name" class="hud panel"></div>
 
     <div id="hud-help" class="hud">
-      <kbd>W</kbd>/<kbd>S</kbd> gas/back &nbsp; <kbd>A</kbd>/<kbd>D</kbd> styr &nbsp;
-      <kbd>SPACE</kbd> skrapa &nbsp; <kbd>C</kbd> kamera &nbsp; <kbd>M</kbd> ljud &nbsp;
-      <kbd>R</kbd> börja om &nbsp; <kbd>ESC</kbd> meny
+      <kbd>W</kbd>/<kbd>S</kbd> throttle/reverse &nbsp; <kbd>A</kbd>/<kbd>D</kbd> steer &nbsp;
+      <kbd>SPACE</kbd> blade &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>M</kbd> sound &nbsp;
+      <kbd>R</kbd> restart &nbsp; <kbd>ESC</kbd> menu
     </div>
 
     <div id="toast" class="hud"></div>
@@ -220,18 +220,18 @@
         <h1 id="finish-title">Isen är spolad!</h1>
         <div id="finish-stars"></div>
         <div class="breakdown">
-          <div>Täckning <span class="value" id="finish-coverage"></span></div>
+          <div>Coverage <span class="value" id="finish-coverage"></span></div>
           <div>Precision <span class="value" id="finish-precision"></span></div>
-          <div>Tidsbonus <span class="value" id="finish-time"></span></div>
-          <div>Krockavdrag <span class="value" id="finish-collisions"></span></div>
-          <div>Hinderavdrag <span class="value" id="finish-cones"></span></div>
-          <div style="margin-top:8px">Totalt <span class="value" id="finish-total"></span></div>
+          <div>Time bonus <span class="value" id="finish-time"></span></div>
+          <div>Crash penalty <span class="value" id="finish-collisions"></span></div>
+          <div>Obstacle penalty <span class="value" id="finish-cones"></span></div>
+          <div style="margin-top:8px">Total <span class="value" id="finish-total"></span></div>
         </div>
         <div id="finish-record"></div>
         <div class="buttons">
-          <button id="next-btn">Nästa nivå →</button>
-          <button id="restart-btn" class="secondary">Kör igen</button>
-          <button id="menu-btn" class="secondary">Meny</button>
+          <button id="next-btn">Next level →</button>
+          <button id="restart-btn" class="secondary">Play again</button>
+          <button id="menu-btn" class="secondary">Menu</button>
         </div>
       </div>
     </div>
@@ -239,22 +239,22 @@
     <div id="splash-overlay">
       <img id="splash-img" alt="ZAMBONI KING" />
       <div id="splash-fade"></div>
-      <button id="splash-play">▶ SPELA</button>
-      <div id="splash-hint">Tryck på valfri tangent för att börja</div>
+      <button id="splash-play">▶ PLAY</button>
+      <div id="splash-hint">Press any key to start</div>
     </div>
 
     <div id="menu-overlay">
       <div class="card">
         <h1>ZAMBONI KING 👑</h1>
-        <div class="tagline">Spola dig från Div 5 hela vägen till SHL – och vidare.</div>
+        <div class="tagline">Resurface your way from the bottom leagues to the top — and beyond.</div>
         <div class="standard-toggle">
-          <button id="standard-europa">Europa · 30 m</button>
-          <button id="standard-nordamerika">Nordamerika · 26 m</button>
+          <button id="standard-europa">Europe · 30 m</button>
+          <button id="standard-nordamerika">North America · 26 m</button>
         </div>
         <div id="level-list"></div>
         <div id="menu-help">
-          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> kör &nbsp;
-          <kbd>SPACE</kbd> skrapa upp/ner &nbsp; <kbd>C</kbd> kamera &nbsp; <kbd>ESC</kbd> meny
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp;
+          <kbd>SPACE</kbd> blade up/down &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>ESC</kbd> menu
         </div>
       </div>
     </div>

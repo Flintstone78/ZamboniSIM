@@ -100,8 +100,8 @@ export class Hud {
           unlocked
             ? level.description
             : level.bonus
-              ? 'Kräver 3 stjärnor på alla nivåer.'
-              : 'Klara föregående nivå först.'
+              ? 'Needs 3 stars on every level.'
+              : 'Clear the previous level first.'
         }</span>`;
       if (unlocked) card.addEventListener('click', () => this.callbacks.onSelectLevel(level.id));
       list.appendChild(card);
@@ -123,7 +123,7 @@ export class Hud {
   }
 
   setBlade(down: boolean): void {
-    this.bladeValue.textContent = down ? 'SKRAPA NERE' : 'SKRAPA UPPE – tryck SPACE';
+    this.bladeValue.textContent = down ? 'BLADE DOWN' : 'BLADE UP – press SPACE';
     this.bladeValue.classList.toggle('down', down);
   }
 
@@ -145,7 +145,7 @@ export class Hud {
     this.precisionValue.textContent = `${Math.round(precision * 100)}%`;
     this.collisionValue.textContent = `${collisions}`;
     this.coneValue.textContent = `${coneHits}`;
-    this.scoreValue.textContent = `${Math.max(0, Math.round(score))} p`;
+    this.scoreValue.textContent = `${Math.max(0, Math.round(score))} pts`;
     this.speedValue.textContent = `${Math.round(Math.abs(speedMs) * 3.6)}`;
   }
 
@@ -192,7 +192,7 @@ export class Hud {
   }
 
   showFinish(stats: FinishStats): void {
-    el('finish-title').textContent = stats.success ? 'Isen är spolad!' : 'Tiden är ute!';
+    el('finish-title').textContent = stats.success ? 'Ice resurfaced!' : "Time's up!";
     el('finish-stars').textContent = stats.success ? starString(stats.stars) : '—';
     el('finish-coverage').textContent = stats.success
       ? `+${Math.round(stats.coverageScore)}`
@@ -201,12 +201,12 @@ export class Hud {
     el('finish-time').textContent = `+${Math.round(stats.timeScore)}`;
     el('finish-collisions').textContent = `−${Math.round(stats.collisionPenalty)}`;
     el('finish-cones').textContent = `−${Math.round(stats.conePenalty)}`;
-    el('finish-total').textContent = `${Math.max(0, Math.round(stats.total))} p`;
+    el('finish-total').textContent = `${Math.max(0, Math.round(stats.total))} pts`;
     el('finish-record').textContent = !stats.success
-      ? 'Hela isen måste spolas innan tiden tar slut.'
+      ? 'Resurface the whole sheet before time runs out.'
       : stats.isRecord
-        ? '🏆 Nytt rekord!'
-        : `Rekord: ${Math.max(0, Math.round(stats.best))} p`;
+        ? '🏆 New record!'
+        : `Record: ${Math.max(0, Math.round(stats.best))} pts`;
     el('next-btn').style.display = stats.hasNext ? 'inline-block' : 'none';
     this.finishOverlay.style.display = 'flex';
   }

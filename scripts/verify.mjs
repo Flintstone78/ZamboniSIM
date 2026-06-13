@@ -16,7 +16,7 @@ page.on('console', (m) => {
   if (m.type() === 'error' && !m.text().includes('404')) errors.push(m.text());
 });
 
-await page.goto('http://localhost:4173/?autostart=1&level=shl', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:4173/?autostart=1&level=eu4', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1500);
 
 const result = await page.evaluate(() => {
@@ -46,7 +46,7 @@ const result = await page.evaluate(() => {
   // --- Finish: paint the whole rink; overlay, stars + record should appear ---
   localStorage.removeItem('zambonisim.best');
   localStorage.removeItem('zambonisim.progress');
-  g.startLevel('shl');
+  g.startLevel('eu4');
   for (let z = -14.5; z <= 14.5; z += 0.5) {
     g.ice.liftBlade();
     for (let x = -29.5; x <= 29.5; x += 0.3) g.ice.paint(x, z, Math.PI / 2, 1);
@@ -60,7 +60,7 @@ const result = await page.evaluate(() => {
   out.progressStored = localStorage.getItem('zambonisim.progress');
 
   // --- Restart the same level resets everything ---
-  g.startLevel('shl');
+  g.startLevel('eu4');
   g.tick(1 / 60);
   out.afterRestart = {
     coverage: document.getElementById('progress-pct').textContent,

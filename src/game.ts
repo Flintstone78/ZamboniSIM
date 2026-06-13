@@ -23,7 +23,15 @@ import { Obstacles } from './obstacles';
 import { AudioEngine } from './audio';
 import { Gate } from './gate';
 import { createGoals, resolveGoalCollision } from './goals';
-import { LevelDef, LEVELS, levelById, loadStars, saveStars, nextLevel } from './levels';
+import {
+  LevelDef,
+  EUROPE_LEVELS,
+  levelsForRegion,
+  levelById,
+  loadStars,
+  saveStars,
+  nextLevel,
+} from './levels';
 
 type CameraMode = 'chase' | 'fpv' | 'top';
 const CAMERA_MODES: CameraMode[] = ['chase', 'fpv', 'top'];
@@ -45,7 +53,7 @@ export class Game {
   private gate!: Gate; // rebuilt per level (its boards move with rink width)
 
   private state: GameState = 'splash';
-  private level: LevelDef = LEVELS[0];
+  private level: LevelDef = EUROPE_LEVELS[0];
   private standard: RinkStandard = 'europa';
   private rink: Rink | null = null;
   private arenaGroup: THREE.Group | null = null;
@@ -78,7 +86,7 @@ export class Game {
           if (this.state !== 'playing') return;
           this.collisions++;
           this.audio.crash(impact);
-          this.hud.showToast(impact > 2.5 ? 'KRASCH! −300 p' : 'Dunk! −300 p');
+          this.hud.showToast(impact > 2.5 ? 'CRASH! −300 pts' : 'Bump! −300 pts');
         },
       },
       {
@@ -92,7 +100,7 @@ export class Game {
         if (this.state !== 'playing') return;
         this.coneHits++;
         this.audio.cone();
-        this.hud.showToast('Kona! −150 p');
+        this.hud.showToast('Cone! −150 pts');
       },
       onPuckHit: () => this.audio.puck(),
     });
@@ -108,7 +116,7 @@ export class Game {
       onSelectLevel: (id) => this.startLevel(id),
       onStandard: (std) => {
         this.standard = std;
-        this.hud.renderMenu(LEVELS, loadStars(), this.standard);
+        this.hud.renderMenu(levelsForRegion(std), loadStars(), std);
       },
       onPlay: () => this.showMenu(),
     });
@@ -121,7 +129,7 @@ export class Game {
       if (this.state !== 'menu') this.startLevel(this.level.id);
     };
     this.input.onTap['KeyM'] = () => {
-      this.hud.showToast(this.audio.toggleMuted() ? 'Ljud av' : 'Ljud på');
+      this.hud.showToast(this.audio.toggleMuted() ? 'Sound off' : 'Sound on');
     };
     this.input.onTap['Escape'] = () => {
       if (this.state === 'playing' || this.state === 'finished') this.showMenu();
@@ -135,7 +143,7 @@ export class Game {
         if (this.state !== 'playing') return;
         this.vehicle.bladeDown = !this.vehicle.bladeDown;
         this.hud.setBlade(this.vehicle.bladeDown);
-        this.hud.showToast(this.vehicle.bladeDown ? 'Skrapan nere' : 'Skrapan uppe');
+        this.hud.showToast(this.vehicle.bladeDown ? 'Blade down' : 'Blade up');
       };
     }
 
@@ -144,7 +152,7 @@ export class Game {
     if (params.get('autostart')) {
       const std = params.get('standard');
       if (std === 'europa' || std === 'nordamerika') this.standard = std;
-      this.startLevel(params.get('level') ?? LEVELS[0].id);
+      this.startLevel(params.get('level') ?? EUROPE_LEVELS[0].id);
     } else {
       this.showSplash();
     }
@@ -171,13 +179,15 @@ export class Game {
     this.state = 'menu';
     this.hud.hideSplash();
     this.hud.hideFinish();
-    this.hud.renderMenu(LEVELS, loadStars(), this.standard);
+    this.hud.renderMenu(levelsForRegion(this.standard), loadStars(), this.standard);
     this.hud.showMenu();
   }
 
   /** (Re)build the world for a level and start driving. */
   startLevel(levelId: string): void {
     this.level = levelById(levelId);
+    // Region (and thus rink width) follows the level being played
+    this.standard = this.level.region;
     setRinkStandard(this.standard);
 
     // Swap out the per-level world: rink (width may change), arena, goals, gate
@@ -211,7 +221,7 @@ export class Game {
     this.hud.hideMenu();
     this.hud.setLevel(this.level);
     this.hud.setBlade(false);
-    this.hud.showToast(`${this.level.name} – porten öppnas!`);
+    this.hud.showToast(`${this.level.name} – gate opening!`);
     this.syncZamboni();
     this.camPos.set(0, 0, 0); // forces a snap on the next camera update
     this.updateCamera(1);

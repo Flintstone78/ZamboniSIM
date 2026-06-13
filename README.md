@@ -16,13 +16,18 @@ npm run dev
 
 ### Karriär
 
-Från startmenyn väljer du arena och rinkstandard. Du jobbar dig upp genom
-divisionerna – **Div 5 → Div 2 → HockeyAllsvenskan → SHL** – där varje nivå har
-kortare tid och fler hinder. Klara en nivå för att låsa upp nästa; ta tre
-stjärnor på alla fyra för att låsa upp bonusnivån **Landslagscampen**.
+Spelets UI är på engelska. Från startsidan väljer du region, som styr både
+rinkbredd och vilken karriärstege du klättrar – två separata banor med egna
+stjärnor och upplåsningar:
 
-Rinken kan köras i **Europa** (30 m bred) eller **Nordamerika** (smalare 26 m,
-NHL-mått). Varje nivå börjar i maskinrummet – porten i sargen glider upp och du
+- **Europe** (30 m bred rink): Div 5 *Training Hall* → Div 2 *Local Rink* →
+  *Allsvenskan Arena* → SHL *Top Arena*, plus bonusnivån *National Team Camp*.
+- **North America** (smalare 26 m NHL-rink): Juniors *Practice Rink* → ECHL →
+  AHL → NHL *Arena*, plus bonusnivån *All-Star Game*.
+
+Varje nivå har kortare tid och fler hinder än den förra. Klara en nivå för att
+låsa upp nästa; ta tre stjärnor på alla fyra för att låsa upp regionens
+bonusnivå. Varje nivå börjar i maskinrummet – porten i sargen glider upp och du
 kör ut på isen. Precis som i en riktig spolning står målburarna avlyfta från
 mållinjen och parkerade mot långsidornas sarg medan du jobbar.
 
