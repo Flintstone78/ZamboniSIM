@@ -1,6 +1,7 @@
-# One-off: provision a no-account dreamlo leaderboard from a runner (the dev
-# sandbox can't reach dreamlo.com). Prints the returned key pair to the log;
-# trigger by touching design/dreamlo-create.txt.
+# One-off: provision a no-account JSON store for the global leaderboard from a
+# runner (the dev sandbox can't reach these hosts). Creates an empty array blob
+# on jsonblob.com and prints the new blob id (in the Location header); also
+# probes kvdb.io as a fallback. Trigger by touching design/dreamlo-create.txt.
 name: dreamlo-create
 
 on:
@@ -15,13 +16,15 @@ jobs:
   create:
     runs-on: ubuntu-latest
     steps:
-      - name: Create leaderboard
+      - name: Create jsonblob
         run: |
-          for url in \
-            "https://www.dreamlo.com/lb/createNew" \
-            "https://dreamlo.com/lb/createNew"; do
-            echo "=== $url ==="
-            curl -sS -L --max-time 20 "$url" || true
-            echo
-            echo "=========================="
-          done
+          echo "=== jsonblob create (look for Location: .../api/jsonBlob/<id>) ==="
+          curl -sS -i --max-time 25 \
+            -X POST 'https://jsonblob.com/api/jsonBlob' \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json' \
+            -d '[]' | grep -iE '^(HTTP|Location)' || true
+          echo
+          echo "=== kvdb.io create (fallback; prints bucket id) ==="
+          curl -sS --max-time 25 -d '{}' 'https://kvdb.io/' || true
+          echo
