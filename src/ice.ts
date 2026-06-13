@@ -165,6 +165,14 @@ export class IceResurfacer {
     return this.paintableCells === 0 ? 0 : this.paintedCells / this.paintableCells;
   }
 
+  /** Running tallies (read by the combo system to detect clean vs overlap). */
+  get painted(): number {
+    return this.paintedCells;
+  }
+  get overlaps(): number {
+    return this.overlapEvents;
+  }
+
   /** 1.0 = no ground covered twice; falls as overlap accumulates. */
   get precision(): number {
     const total = this.paintedCells + this.overlapEvents;

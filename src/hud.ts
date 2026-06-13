@@ -25,6 +25,7 @@ export interface FinishStats {
   timeScore: number;
   collisionPenalty: number;
   conePenalty: number;
+  flowBonus: number;
   total: number;
   stars: number;
   best: number;
@@ -173,6 +174,33 @@ export class Hud {
     this.levelName.textContent = `${level.name} · ${level.division}`;
   }
 
+  private combo = el('combo');
+  private comboMult = this.combo.querySelector('.mult') as HTMLElement;
+  private comboBar = this.combo.querySelector('.bar i') as HTMLElement;
+  private popupEl = el('popup');
+  private popupTimer = 0;
+
+  /** Show the live combo multiplier (hidden at x1) and its decay bar (0..1). */
+  setCombo(multiplier: number, fill: number): void {
+    if (multiplier <= 1) {
+      this.combo.style.opacity = '0';
+      return;
+    }
+    this.combo.style.opacity = '1';
+    this.comboMult.textContent = `x${multiplier}`;
+    this.comboBar.style.width = `${Math.max(0, Math.min(1, fill)) * 100}%`;
+  }
+
+  /** Big celebratory popup (combo up, net cleared, perfect line). */
+  popup(text: string): void {
+    this.popupEl.textContent = text;
+    this.popupEl.classList.remove('show');
+    void this.popupEl.offsetWidth; // restart the CSS animation
+    this.popupEl.classList.add('show');
+    window.clearTimeout(this.popupTimer);
+    this.popupTimer = window.setTimeout(() => this.popupEl.classList.remove('show'), 900);
+  }
+
   setBlade(down: boolean): void {
     this.bladeValue.textContent = down ? 'BLADE DOWN' : 'BLADE UP – press SPACE';
     this.bladeValue.classList.toggle('down', down);
@@ -250,6 +278,7 @@ export class Hud {
       : `${Math.round(stats.coverage * 100)} %`;
     el('finish-precision').textContent = `+${Math.round(stats.precisionScore)}`;
     el('finish-time').textContent = `+${Math.round(stats.timeScore)}`;
+    el('finish-flow').textContent = `+${Math.round(stats.flowBonus)}`;
     el('finish-collisions').textContent = `−${Math.round(stats.collisionPenalty)}`;
     el('finish-cones').textContent = `−${Math.round(stats.conePenalty)}`;
     el('finish-total').textContent = `${Math.max(0, Math.round(stats.total))} pts`;

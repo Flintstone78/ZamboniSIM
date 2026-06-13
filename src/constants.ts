@@ -78,3 +78,11 @@ export const SCORE_TIME_MAX = 4000;
 export const SCORE_TIME_PER_SECOND = 12;
 export const SCORE_COLLISION_PENALTY = 300;
 export const SCORE_CONE_PENALTY = 150;
+
+// Combo / flow: laying clean ice without overlap or crashes builds a streak.
+// Every COMBO_STEP fresh cells bumps the multiplier (up to COMBO_MAX), and each
+// fresh cell banks SCORE_FLOW_PER_CELL × multiplier into the flow bonus.
+export const COMBO_STEP = 22;
+export const COMBO_MAX = 5;
+export const SCORE_FLOW_PER_CELL = 0.22;
+export const COMBO_GRACE = 2.0; // seconds the streak survives without painting

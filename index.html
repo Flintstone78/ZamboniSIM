@@ -70,6 +70,34 @@
         opacity: 0; transition: opacity 0.25s;
       }
 
+      #combo {
+        bottom: 96px; right: 22px; text-align: right;
+        font-weight: 900; font-style: italic; color: #ffd54f;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.6); opacity: 0;
+        transition: opacity 0.2s; line-height: 0.95;
+      }
+      #combo .mult { font-size: 42px; display: block; }
+      #combo .label { font-size: 13px; letter-spacing: 0.12em; color: #fff3c4; }
+      #combo .bar {
+        margin-top: 4px; height: 5px; width: 110px; margin-left: auto;
+        background: rgba(255,255,255,0.18); border-radius: 3px; overflow: hidden;
+      }
+      #combo .bar i { display: block; height: 100%; background: #ffd54f; }
+
+      #popup {
+        top: 34%; left: 50%; transform: translateX(-50%) scale(0.6);
+        font-size: 40px; font-weight: 900; font-style: italic;
+        color: #fff; text-shadow: 0 0 18px #4fc3f7, 0 3px 10px rgba(0,0,0,0.7);
+        opacity: 0; pointer-events: none;
+      }
+      #popup.show { animation: popPop 0.9s ease-out; }
+      @keyframes popPop {
+        0% { opacity: 0; transform: translateX(-50%) scale(0.5); }
+        25% { opacity: 1; transform: translateX(-50%) scale(1.15); }
+        70% { opacity: 1; transform: translateX(-50%) scale(1); }
+        100% { opacity: 0; transform: translateX(-50%) scale(1.05); }
+      }
+
       #finish-overlay {
         position: fixed; inset: 0; display: none;
         align-items: center; justify-content: center;
@@ -232,6 +260,13 @@
       <span class="value" id="speed-value">0</span> km/h
     </div>
 
+    <div id="combo" class="hud">
+      <span class="mult">x2</span>
+      <span class="label">COMBO</span>
+      <div class="bar"><i></i></div>
+    </div>
+    <div id="popup" class="hud"></div>
+
     <div id="blade-indicator" class="hud panel">BLADE UP – press SPACE</div>
     <div id="level-name" class="hud panel"></div>
 
@@ -251,6 +286,7 @@
           <div>Coverage <span class="value" id="finish-coverage"></span></div>
           <div>Precision <span class="value" id="finish-precision"></span></div>
           <div>Time bonus <span class="value" id="finish-time"></span></div>
+          <div>Flow bonus <span class="value" id="finish-flow"></span></div>
           <div>Crash penalty <span class="value" id="finish-collisions"></span></div>
           <div>Players hit <span class="value" id="finish-cones"></span></div>
           <div style="margin-top:8px">Total <span class="value" id="finish-total"></span></div>

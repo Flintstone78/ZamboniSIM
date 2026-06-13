@@ -13,6 +13,8 @@ export class AudioEngine {
   private engineFilter!: BiquadFilterNode;
   private engineGain!: GainNode;
   private scrapeGain!: GainNode;
+  private crowdGain!: GainNode;
+  private crowdFilter!: BiquadFilterNode;
   private muted = localStorage.getItem('zambonisim.muted') === '1';
 
   constructor() {
@@ -58,6 +60,35 @@ export class AudioEngine {
       t,
       0.08,
     );
+  }
+
+  /** Swell the crowd murmur with progress/excitement (0..1). */
+  setCrowd(intensity: number): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.crowdGain) return;
+    const t = ctx.currentTime;
+    this.crowdGain.gain.setTargetAtTime(0.016 + intensity * 0.05, t, 0.4);
+    this.crowdFilter.frequency.setTargetAtTime(420 + intensity * 900, t, 0.4);
+  }
+
+  /** A quick crowd cheer (combo milestone, net cleared, finish). */
+  cheer(strength = 1): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer(ctx, 1);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1100;
+    filter.Q.value = 0.6;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.06 * strength, t + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.0008, t + 0.9);
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(t);
+    src.stop(t + 1);
   }
 
   /** Board impact: low thump + noise burst, scaled by impact speed. */
@@ -203,6 +234,8 @@ export class AudioEngine {
     crowdFilter.frequency.value = 420;
     const crowdGain = ctx.createGain();
     crowdGain.gain.value = 0.018;
+    this.crowdGain = crowdGain;
+    this.crowdFilter = crowdFilter;
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.09;
     const lfoGain = ctx.createGain();

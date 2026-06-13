@@ -10,6 +10,10 @@ import {
   SCORE_TIME_PER_SECOND,
   SCORE_COLLISION_PENALTY,
   SCORE_CONE_PENALTY,
+  SCORE_FLOW_PER_CELL,
+  COMBO_STEP,
+  COMBO_MAX,
+  COMBO_GRACE,
   setRinkStandard,
   RinkStandard,
 } from './constants';
@@ -24,6 +28,7 @@ import { AudioEngine } from './audio';
 import { Gate } from './gate';
 import { Goals } from './goals';
 import { Skaters } from './skaters';
+import { IceSpray } from './particles';
 import {
   LevelDef,
   EUROPE_LEVELS,
@@ -60,6 +65,16 @@ export class Game {
   private gate!: Gate; // rebuilt per level (its boards move with rink width)
   private goals = new Goals();
   private skaters = new Skaters();
+  private spray = new IceSpray();
+
+  // Combo / flow state
+  private combo = 0; // fresh cells laid in the current streak
+  private multiplier = 1;
+  private comboTimer = 0;
+  private flowBonus = 0;
+  private prevPainted = 0;
+  private prevOverlaps = 0;
+  private shake = 0;
 
   private state: GameState = 'splash';
   private level: LevelDef = EUROPE_LEVELS[0];
@@ -94,6 +109,8 @@ export class Game {
           if (this.state !== 'playing') return;
           this.collisions++;
           this.audio.crash(impact);
+          this.breakCombo();
+          this.shake = Math.min(1, 0.3 + impact * 0.18);
           this.hud.showToast(impact > 2.5 ? 'CRASH! −300 pts' : 'Bump! −300 pts');
         },
       },
@@ -110,6 +127,7 @@ export class Game {
     this.scene.add(this.obstacles.group);
     this.scene.add(this.goals.group);
     this.scene.add(this.skaters.group);
+    this.scene.add(this.spray.points);
 
     this.hud = new Hud({
       onRestart: () => this.startLevel(this.level.id),
@@ -221,6 +239,14 @@ export class Game {
     this.elapsed = 0;
     this.collisions = 0;
     this.skaterHits = 0;
+    this.combo = 0;
+    this.multiplier = 1;
+    this.comboTimer = 0;
+    this.flowBonus = 0;
+    this.prevPainted = 0;
+    this.prevOverlaps = 0;
+    this.shake = 0;
+    this.hud.setCombo(1, 0);
     this.state = 'playing';
     this.hud.hideFinish();
     this.hud.hideMenu();
@@ -249,7 +275,10 @@ export class Game {
       this.vehicle.update(dt, this.input.throttle(0), this.input.steer(0));
       const goalImpact = this.goals.resolveCollision(this.vehicle);
       if (goalImpact > 0) this.vehicle.registerHit(goalImpact);
-      this.goals.update(dt, this.ice);
+      if (this.goals.update(dt, this.ice) > 0) {
+        this.hud.popup('NET CLEARED!');
+        this.audio.cheer(0.8);
+      }
       this.obstacles.update(dt, this.vehicle.position, this.vehicle.velocity);
 
       // In the final minute, impatient players spill onto the ice
@@ -261,6 +290,8 @@ export class Game {
       if (skaterImpact > 0) {
         this.skaterHits++;
         this.audio.crash(1.4);
+        this.breakCombo();
+        this.shake = Math.max(this.shake, 0.5);
         this.hud.showToast('Knocked a player! −150 pts');
       }
 
@@ -271,13 +302,19 @@ export class Game {
         const bladeX = this.vehicle.position.x - fwd.x * SWATH_REAR_OFFSET;
         const bladeZ = this.vehicle.position.y - fwd.y * SWATH_REAR_OFFSET;
         this.ice.paint(bladeX, bladeZ, this.vehicle.heading, this.elapsed);
+        this.spray.emit(bladeX, bladeZ, this.vehicle.heading, 3);
       } else {
         this.ice.liftBlade();
       }
 
+      this.updateCombo(dt, scraping);
+
       if (this.ice.coverage >= COVERAGE_GOAL) this.finish(true);
       else if (this.elapsed >= this.level.timeLimit) this.finish(false);
     }
+
+    this.shake = Math.max(0, this.shake - dt * 2.2);
+    this.spray.update(dt);
 
     animateBlade(this.zamboni.blade, this.vehicle.bladeDown, dt);
     this.syncZamboni();
@@ -311,12 +348,49 @@ export class Game {
     }
   }
 
+  private breakCombo(): void {
+    this.combo = 0;
+    this.multiplier = 1;
+    this.comboTimer = 0;
+    this.hud.setCombo(1, 0);
+  }
+
+  /** Build/decay the flow combo from fresh vs overlapped ice this frame. */
+  private updateCombo(dt: number, scraping: boolean): void {
+    const dPaint = this.ice.painted - this.prevPainted;
+    const dOver = this.ice.overlaps - this.prevOverlaps;
+    this.prevPainted = this.ice.painted;
+    this.prevOverlaps = this.ice.overlaps;
+
+    if (scraping && dOver > 0) {
+      this.breakCombo();
+    } else if (scraping && dPaint > 0) {
+      this.combo += dPaint;
+      this.comboTimer = COMBO_GRACE;
+      this.flowBonus += dPaint * this.multiplier * SCORE_FLOW_PER_CELL;
+      const m = Math.min(COMBO_MAX, 1 + Math.floor(this.combo / COMBO_STEP));
+      if (m > this.multiplier) {
+        this.multiplier = m;
+        this.hud.popup(m >= COMBO_MAX ? 'MAX FLOW! x5' : `COMBO x${m}`);
+        this.audio.cheer(0.4 + m * 0.1);
+      }
+    }
+    this.comboTimer = Math.max(0, this.comboTimer - dt);
+    if (this.comboTimer === 0 && this.multiplier > 1) this.breakCombo();
+    this.hud.setCombo(this.multiplier, this.comboTimer / COMBO_GRACE);
+
+    // The crowd swells with how much ice is done and how hot the streak is
+    this.audio.setCrowd(this.ice.coverage * 0.7 + ((this.multiplier - 1) / COMBO_MAX) * 0.3);
+  }
+
   private currentScore(): number {
+    const time =
+      Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND) * this.ice.coverage;
     return (
       this.ice.coverage * SCORE_COVERAGE_MAX +
       this.ice.precision * SCORE_PRECISION_MAX * this.ice.coverage +
-      Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND) *
-        this.ice.coverage -
+      time +
+      this.flowBonus -
       this.collisions * SCORE_COLLISION_PENALTY -
       this.skaterHits * SCORE_CONE_PENALTY
     );
@@ -324,16 +398,21 @@ export class Game {
 
   private finish(success: boolean): void {
     this.state = 'finished';
-    if (success) this.audio.finish();
+    if (success) {
+      this.audio.finish();
+      this.audio.cheer(1.4);
+    }
     const coverageScore = this.ice.coverage * SCORE_COVERAGE_MAX;
     const precisionScore = this.ice.precision * SCORE_PRECISION_MAX;
     const timeScore = success
       ? Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND)
       : 0;
+    const flowBonus = Math.round(this.flowBonus);
     const collisionPenalty = this.collisions * SCORE_COLLISION_PENALTY;
     const conePenalty = this.skaterHits * SCORE_CONE_PENALTY;
-    const total = coverageScore + precisionScore + timeScore - collisionPenalty - conePenalty;
-    const stars = !success ? 0 : total >= 13000 ? 3 : total >= 10500 ? 2 : 1;
+    const total =
+      coverageScore + precisionScore + timeScore + flowBonus - collisionPenalty - conePenalty;
+    const stars = !success ? 0 : total >= 14000 ? 3 : total >= 11000 ? 2 : 1;
     if (success) saveStars(this.level.id, stars);
 
     // Per-level personal best feeds the global career-score leaderboard
@@ -348,6 +427,7 @@ export class Game {
       coverageScore,
       precisionScore,
       timeScore,
+      flowBonus,
       collisionPenalty,
       conePenalty,
       total,
@@ -397,6 +477,7 @@ export class Game {
         2.6,
         pos.y - fwd.y * 1.9,
       );
+      this.applyShake();
       this.camera.lookAt(pos.x + fwd.x * 12, 1.2, pos.y + fwd.y * 12);
       this.camPos.copy(this.camera.position);
       return;
@@ -417,6 +498,16 @@ export class Game {
     if (this.camPos.lengthSq() === 0) this.camPos.copy(target);
     this.camPos.lerp(target, Math.min(1, dt * 3.5));
     this.camera.position.copy(this.camPos);
+    this.applyShake();
     this.camera.lookAt(pos.x + fwd.x * 4, 1.2, pos.y + fwd.y * 4);
+  }
+
+  /** Jolt the camera briefly after a crash. */
+  private applyShake(): void {
+    if (this.shake <= 0) return;
+    const s = this.shake * 0.5;
+    this.camera.position.x += (Math.random() - 0.5) * s;
+    this.camera.position.y += (Math.random() - 0.5) * s;
+    this.camera.position.z += (Math.random() - 0.5) * s;
   }
 }

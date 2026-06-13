@@ -134,9 +134,10 @@ export class Goals {
     m.rotation.set(0, e.side > 0 ? Math.PI : 0, e.anim * (Math.PI / 2 - 0.1));
   }
 
-  /** Animate any goal whose behind-strip has been resurfaced. */
-  update(dt: number, ice: IceResurfacer): void {
-    let dirty = false;
+  /** Animate any goal whose behind-strip has been resurfaced. Returns how many
+   *  nets started moving this frame (for a cheer/popup). */
+  update(dt: number, ice: IceResurfacer): number {
+    let justLifted = 0;
     for (const e of this.entries) {
       if (e.moved) continue;
       if (!e.lifting) {
@@ -146,7 +147,7 @@ export class Goals {
         const stripMax = e.side > 0 ? RINK_LENGTH / 2 : back;
         if (ice.regionCoverage(stripMin, stripMax, -GOAL_WIDTH, GOAL_WIDTH) > BEHIND_CLEAN_THRESHOLD) {
           e.lifting = true;
-          dirty = true; // drop its footprint so the ice underneath is free
+          justLifted++;
         }
       }
       if (e.lifting && e.anim < 1) {
@@ -155,11 +156,12 @@ export class Goals {
         if (e.anim >= 1) e.moved = true;
       }
     }
-    if (dirty) {
+    if (justLifted > 0) {
       goalBoxes = this.entries
         .filter((e) => !e.lifting && !e.moved)
         .map((e) => footprint(e.side));
     }
+    return justLifted;
   }
 
   /** Box-collision push-out for in-play nets. Returns impact speed, or 0. */
