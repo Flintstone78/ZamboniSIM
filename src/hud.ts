@@ -28,6 +28,7 @@ export interface HudCallbacks {
   onNext: () => void;
   onSelectLevel: (id: string) => void;
   onStandard: (standard: RinkStandard) => void;
+  onPlay: () => void;
 }
 
 const starString = (n: number): string => '★'.repeat(n) + '☆'.repeat(3 - n);
@@ -46,13 +47,31 @@ export class Hud {
   private toast = el('toast');
   private finishOverlay = el('finish-overlay');
   private menuOverlay = el('menu-overlay');
+  private splashOverlay = el('splash-overlay');
   private minimapCtx = el<HTMLCanvasElement>('minimap').getContext('2d')!;
   private toastTimer = 0;
+
+  /** Cover art served from /assets (base-aware for GitHub Pages subpath). */
+  private readonly coverUrl = import.meta.env.BASE_URL + 'assets/cover.png';
 
   constructor(private callbacks: HudCallbacks) {
     el('restart-btn').addEventListener('click', callbacks.onRestart);
     el('menu-btn').addEventListener('click', callbacks.onMenu);
     el('next-btn').addEventListener('click', callbacks.onNext);
+    el<HTMLImageElement>('splash-img').src = this.coverUrl;
+    el('splash-play').addEventListener('click', callbacks.onPlay);
+    // Tint the level-select menu with a darkened cover for cohesion
+    this.menuOverlay.style.backgroundImage =
+      `linear-gradient(rgba(4,8,14,0.78), rgba(4,8,14,0.9)), url("${this.coverUrl}")`;
+  }
+
+  showSplash(): void {
+    this.splashOverlay.style.display = 'flex';
+    document.body.classList.add('in-menu'); // hide the gameplay HUD behind it
+  }
+
+  hideSplash(): void {
+    this.splashOverlay.style.display = 'none';
   }
 
   renderMenu(

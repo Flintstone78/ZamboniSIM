@@ -28,7 +28,7 @@ import { LevelDef, LEVELS, levelById, loadStars, saveStars, nextLevel } from './
 type CameraMode = 'chase' | 'fpv' | 'top';
 const CAMERA_MODES: CameraMode[] = ['chase', 'fpv', 'top'];
 
-type GameState = 'menu' | 'playing' | 'finished';
+type GameState = 'splash' | 'menu' | 'playing' | 'finished';
 
 const BEST_SCORE_KEY = 'zambonisim.best';
 
@@ -44,7 +44,7 @@ export class Game {
   private audio = new AudioEngine();
   private gate!: Gate; // rebuilt per level (its boards move with rink width)
 
-  private state: GameState = 'menu';
+  private state: GameState = 'splash';
   private level: LevelDef = LEVELS[0];
   private standard: RinkStandard = 'europa';
   private rink: Rink | null = null;
@@ -110,6 +110,7 @@ export class Game {
         this.standard = std;
         this.hud.renderMenu(LEVELS, loadStars(), this.standard);
       },
+      onPlay: () => this.showMenu(),
     });
 
     this.input.onTap['KeyC'] = () => {
@@ -123,8 +124,12 @@ export class Game {
       this.hud.showToast(this.audio.toggleMuted() ? 'Ljud av' : 'Ljud på');
     };
     this.input.onTap['Escape'] = () => {
-      if (this.state !== 'menu') this.showMenu();
+      if (this.state === 'playing' || this.state === 'finished') this.showMenu();
     };
+    // Any key dismisses the title splash into the level-select menu
+    window.addEventListener('keydown', () => {
+      if (this.state === 'splash') this.showMenu();
+    });
     for (const code of this.input.bladeCodes(0)) {
       this.input.onTap[code] = () => {
         if (this.state !== 'playing') return;
@@ -141,7 +146,7 @@ export class Game {
       if (std === 'europa' || std === 'nordamerika') this.standard = std;
       this.startLevel(params.get('level') ?? LEVELS[0].id);
     } else {
-      this.showMenu();
+      this.showSplash();
     }
 
     window.addEventListener('resize', () => {
@@ -155,8 +160,16 @@ export class Game {
     this.scene.environment = envMap;
   }
 
+  showSplash(): void {
+    this.state = 'splash';
+    this.hud.hideFinish();
+    this.hud.hideMenu();
+    this.hud.showSplash();
+  }
+
   showMenu(): void {
     this.state = 'menu';
+    this.hud.hideSplash();
     this.hud.hideFinish();
     this.hud.renderMenu(LEVELS, loadStars(), this.standard);
     this.hud.showMenu();
@@ -247,7 +260,7 @@ export class Game {
       scraping,
     );
 
-    if (this.state === 'menu') return;
+    if (this.state === 'menu' || this.state === 'splash') return;
 
     this.hud.update(
       Math.min(1, this.ice.coverage / COVERAGE_GOAL),
@@ -321,8 +334,8 @@ export class Game {
   }
 
   private updateCamera(dt: number): void {
-    if (this.state === 'menu') {
-      // Slow orbit around the rink behind the menu
+    if (this.state === 'menu' || this.state === 'splash') {
+      // Slow orbit around the rink behind the menu/splash
       this.menuSpin += dt * 0.08;
       this.camera.up.set(0, 1, 0);
       this.camera.position.set(

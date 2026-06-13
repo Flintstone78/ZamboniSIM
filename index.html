@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ZamboniSIM</title>
+    <title>ZAMBONI KING</title>
     <style>
       :root {
         --hud-bg: rgba(10, 18, 30, 0.72);
@@ -103,10 +103,44 @@
       #blade-indicator.down { color: #aef3b9; border-color: rgba(120,255,160,0.35); }
       #level-name { top: 16px; left: 50%; transform: translateX(-50%); font-size: 13px; color: #cfe2f5; }
 
+      /* Title splash – the generated key art cover */
+      #splash-overlay {
+        position: fixed; inset: 0; display: none;
+        flex-direction: column; align-items: center; justify-content: flex-end;
+        background: #06121f; overflow: hidden;
+      }
+      #splash-img {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: cover; object-position: center;
+      }
+      #splash-fade {
+        position: absolute; inset: 0;
+        background: linear-gradient(transparent 55%, rgba(4,8,14,0.85));
+      }
+      #splash-play {
+        position: relative; margin-bottom: 9vh; pointer-events: auto;
+        cursor: pointer; font: inherit; font-weight: 800;
+        font-size: 22px; letter-spacing: 0.12em; color: #06121f;
+        background: linear-gradient(#ffe082, #ffb300);
+        border: none; border-radius: 12px; padding: 16px 54px;
+        box-shadow: 0 6px 0 #c87f00, 0 10px 30px rgba(0,0,0,0.5);
+        animation: splashPulse 1.6s ease-in-out infinite;
+      }
+      #splash-play:active { transform: translateY(4px); box-shadow: 0 2px 0 #c87f00; }
+      #splash-hint {
+        position: relative; margin-bottom: 4vh; pointer-events: none;
+        color: #cfe2f5; font-size: 13px; letter-spacing: 0.08em; opacity: 0.85;
+      }
+      @keyframes splashPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.04); }
+      }
+
       #menu-overlay {
         position: fixed; inset: 0; display: none;
         align-items: center; justify-content: center;
-        background: linear-gradient(rgba(4,8,14,0.55), rgba(4,8,14,0.82));
+        background: linear-gradient(rgba(4,8,14,0.62), rgba(4,8,14,0.86));
+        background-size: cover; background-position: center;
       }
       #menu-overlay .card {
         background: var(--hud-bg); border: 1px solid var(--hud-border);
@@ -202,9 +236,16 @@
       </div>
     </div>
 
+    <div id="splash-overlay">
+      <img id="splash-img" alt="ZAMBONI KING" />
+      <div id="splash-fade"></div>
+      <button id="splash-play">▶ SPELA</button>
+      <div id="splash-hint">Tryck på valfri tangent för att börja</div>
+    </div>
+
     <div id="menu-overlay">
       <div class="card">
-        <h1>ZamboniSIM 🧊</h1>
+        <h1>ZAMBONI KING 👑</h1>
         <div class="tagline">Spola dig från Div 5 hela vägen till SHL – och vidare.</div>
         <div class="standard-toggle">
           <button id="standard-europa">Europa · 30 m</button>
