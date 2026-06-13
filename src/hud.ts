@@ -100,7 +100,7 @@ export class Hud {
           unlocked
             ? level.description
             : level.bonus
-              ? 'Needs 3 stars on every level.'
+              ? 'Needs 2 stars on every level.'
               : 'Clear the previous level first.'
         }</span>`;
       if (unlocked) card.addEventListener('click', () => this.callbacks.onSelectLevel(level.id));

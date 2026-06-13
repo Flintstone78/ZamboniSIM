@@ -108,11 +108,12 @@ export function saveStars(levelId: string, stars: number): void {
 }
 
 /** Unlocked when the previous level in the same region has been cleared (any
- *  stars). The bonus camp needs 3 stars on every regular level in the region. */
+ *  stars). The bonus arena (the nationals showpiece) needs 2 stars on every
+ *  regular level in the region. */
 export function isUnlocked(level: LevelDef, stars: Record<string, number>): boolean {
   const ladder = levelsForRegion(level.region);
   if (level.bonus) {
-    return ladder.filter((l) => !l.bonus).every((l) => (stars[l.id] ?? 0) >= 3);
+    return ladder.filter((l) => !l.bonus).every((l) => (stars[l.id] ?? 0) >= 2);
   }
   const i = ladder.findIndex((l) => l.id === level.id);
   if (i <= 0) return true;
