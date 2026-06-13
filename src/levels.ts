@@ -27,6 +27,8 @@ export interface LevelDef {
   /** Hall ambience tweaks. */
   hallColor: string;
   lightIntensity: number;
+  /** 0..4 – drives how grand the arena looks (barn → domed showpiece). */
+  tier: number;
   /** Bonus level: requires 3 stars on every regular level in the region. */
   bonus?: boolean;
 }
@@ -56,6 +58,7 @@ function buildLadder(region: RinkStandard, labels: TierLabel[]): LevelDef[] {
     description: l.description,
     bonus: l.bonus,
     ...TIERS[i],
+    tier: i,
     id: l.id,
   }));
 }

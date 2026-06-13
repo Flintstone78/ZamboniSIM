@@ -4,134 +4,250 @@ import { loadTextureInto } from './assets';
 import type { LevelDef } from './levels';
 
 /**
- * The surroundings: concrete apron, tiered stands, ceiling rig and lights.
- * Built per level from its LevelDef (stands layout, scoreboard, ambience) and
- * returned as one group so the next level can swap it out.
+ * Per-tier arena recipe. The five career tiers escalate from a cold practice
+ * barn with no crowd up to a domed showpiece (Globen / Madison Square Garden):
+ * stands grow taller and gain an upper deck, the roof lifts and finally domes,
+ * the light rig brightens, and the top tiers add a centre-hung scoreboard and
+ * championship banners.
+ */
+interface ArenaSpec {
+  rows: number; // lower-deck rows (0 = no stands)
+  allSides: boolean; // stands behind the goals too
+  upperRows: number; // upper-deck rows (0 = single tier)
+  ceiling: number; // height of the enclosing roof / dome spring line
+  domed: boolean; // Globen-style spherical dome
+  scoreboard: 'none' | 'cube' | 'jumbo';
+  banners: number; // championship banners hung per long side
+  spotlights: boolean; // dramatic coloured spotlights
+  barn: boolean; // exposed-truss practice shed
+}
+
+const ARENA_SPECS: ArenaSpec[] = [
+  { rows: 0, allSides: false, upperRows: 0, ceiling: 8, domed: false, scoreboard: 'none', banners: 0, spotlights: false, barn: true },
+  { rows: 5, allSides: false, upperRows: 0, ceiling: 13, domed: false, scoreboard: 'none', banners: 0, spotlights: false, barn: false },
+  { rows: 8, allSides: true, upperRows: 0, ceiling: 19, domed: false, scoreboard: 'cube', banners: 0, spotlights: false, barn: false },
+  { rows: 11, allSides: true, upperRows: 6, ceiling: 26, domed: false, scoreboard: 'cube', banners: 4, spotlights: true, barn: false },
+  { rows: 13, allSides: true, upperRows: 10, ceiling: 32, domed: true, scoreboard: 'jumbo', banners: 6, spotlights: true, barn: false },
+];
+
+const TIER_DEPTH = 1.7;
+const TIER_HEIGHT = 0.85;
+
+/** Procedural championship banner: navy field, gold border, star + number. */
+function bannerTexture(n: number): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#0c2a5e';
+  ctx.fillRect(0, 0, 128, 256);
+  ctx.strokeStyle = '#f2c40f';
+  ctx.lineWidth = 10;
+  ctx.strokeRect(8, 8, 112, 240);
+  ctx.fillStyle = '#f2c40f';
+  ctx.font = 'bold 64px serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('★', 64, 96);
+  ctx.font = 'bold 40px sans-serif';
+  ctx.fillText(String(1990 + n * 3), 64, 170);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * The surroundings: concrete apron, tiered stands, roof and lights, built per
+ * level from its tier and returned as one group so the next level swaps it out.
  */
 export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
+  const spec = ARENA_SPECS[Math.max(0, Math.min(ARENA_SPECS.length - 1, level.tier))];
   const group = new THREE.Group();
   scene.background = new THREE.Color(level.hallColor);
-  scene.fog = new THREE.Fog(level.hallColor, 60, 160);
+  scene.fog = new THREE.Fog(level.hallColor, 45, 110 + level.tier * 30);
 
-  // Concrete floor around the rink
+  // Concrete apron around the rink
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(RINK_LENGTH + 40, RINK_WIDTH + 40),
-    new THREE.MeshStandardMaterial({ color: '#23272d', roughness: 0.95 }),
+    new THREE.PlaneGeometry(RINK_LENGTH + 60, RINK_WIDTH + 60),
+    new THREE.MeshStandardMaterial({ color: spec.barn ? '#3a352c' : '#23272d', roughness: 0.96 }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.02;
   floor.receiveShadow = true;
   group.add(floor);
 
-  // Tiered stands along the configured sides
-  const seatColors = ['#15418c', '#0f3370', '#1a4da3'];
-  const standMat = seatColors.map(
+  const seatMats = ['#15418c', '#0f3370', '#1a4da3'].map(
     (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }),
   );
-  const tierCount = 9;
-  const tierDepth = 1.6;
-  const tierHeight = 0.8;
 
-  // Crowd: a generated audience texture draped as a sloped plane over the
-  // tiers. Materials start invisible and fade in when the texture loads, so
-  // the stands still read as empty seating without the asset.
+  // Crowd: a generated audience texture draped as a sloped plane over each
+  // deck. Materials start invisible and fade in when the texture loads.
   const crowdMats: THREE.MeshStandardMaterial[] = [];
   loadTextureInto('/assets/crowd.png', (tex) => {
     tex.wrapS = THREE.RepeatWrapping;
     for (const mat of crowdMats) {
-      const ownTex = tex.clone();
-      ownTex.repeat.set(mat.userData.repeatX, 1);
-      ownTex.needsUpdate = true;
-      mat.map = ownTex;
+      const own = tex.clone();
+      own.repeat.set(mat.userData.repeatX, 1);
+      own.needsUpdate = true;
+      mat.map = own;
       mat.visible = true;
       mat.needsUpdate = true;
     }
   });
 
-  const crowdPlane = (length: number, alongX: boolean, side: 1 | -1, offset: number) => {
-    const near = offset - tierDepth / 2;
-    const far = offset + (tierCount - 1) * tierDepth + tierDepth / 2;
-    const yNear = tierHeight + 0.08;
-    const yFar = tierCount * tierHeight + 0.08;
+  const crowdPlane = (
+    length: number,
+    alongX: boolean,
+    side: 1 | -1,
+    nearOff: number,
+    farOff: number,
+    yNear: number,
+    yFar: number,
+  ) => {
     const half = length / 2;
     const corner = (along: number, d: number, y: number): [number, number, number] =>
       alongX ? [along, y, side * d] : [side * d, y, along];
     const positions = new Float32Array([
-      ...corner(-half, near, yNear),
-      ...corner(half, near, yNear),
-      ...corner(-half, far, yFar),
-      ...corner(half, far, yFar),
+      ...corner(-half, nearOff, yNear),
+      ...corner(half, nearOff, yNear),
+      ...corner(-half, farOff, yFar),
+      ...corner(half, farOff, yFar),
     ]);
-    const slope = Math.hypot(far - near, yFar - yNear);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute(
-      'uv',
-      new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2),
-    );
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2));
     geo.setIndex([0, 1, 2, 1, 3, 2]);
     geo.computeVertexNormals();
+    const slope = Math.hypot(farOff - nearOff, yFar - yNear);
     const mat = new THREE.MeshStandardMaterial({
       roughness: 0.95,
       visible: false,
       side: THREE.DoubleSide,
     });
-    // One full texture per ~slope-width of stand keeps the figures life-sized
     mat.userData.repeatX = Math.max(1, Math.round(length / (slope * (16 / 9))));
     crowdMats.push(mat);
     group.add(new THREE.Mesh(geo, mat));
   };
 
-  const buildStand = (length: number, alongX: boolean, side: 1 | -1, offset: number) => {
-    for (let i = 0; i < tierCount; i++) {
+  // One deck of stepped rows + its crowd plane. Returns the deck's top edge.
+  const deck = (
+    length: number,
+    alongX: boolean,
+    side: 1 | -1,
+    offset: number,
+    baseY: number,
+    rows: number,
+  ): { far: number; top: number } => {
+    for (let i = 0; i < rows; i++) {
       const geo = alongX
-        ? new THREE.BoxGeometry(length, tierHeight, tierDepth)
-        : new THREE.BoxGeometry(tierDepth, tierHeight, length);
-      const m = new THREE.Mesh(geo, standMat[i % standMat.length]);
-      const dist = offset + i * tierDepth;
-      const y = tierHeight / 2 + i * tierHeight;
+        ? new THREE.BoxGeometry(length, TIER_HEIGHT, TIER_DEPTH)
+        : new THREE.BoxGeometry(TIER_DEPTH, TIER_HEIGHT, length);
+      const m = new THREE.Mesh(geo, seatMats[i % seatMats.length]);
+      const dist = offset + i * TIER_DEPTH;
+      const y = baseY + TIER_HEIGHT / 2 + i * TIER_HEIGHT;
       if (alongX) m.position.set(0, y, side * dist);
       else m.position.set(side * dist, y, 0);
+      m.castShadow = i > rows - 3;
       group.add(m);
     }
-    crowdPlane(length, alongX, side, offset);
+    const near = offset - TIER_DEPTH / 2;
+    const far = offset + (rows - 1) * TIER_DEPTH + TIER_DEPTH / 2;
+    crowdPlane(length, alongX, side, near, far, baseY + TIER_HEIGHT + 0.08, baseY + rows * TIER_HEIGHT + 0.08);
+    return { far, top: baseY + rows * TIER_HEIGHT };
   };
-  if (level.stands !== 'none') {
-    buildStand(RINK_LENGTH + 10, true, 1, RINK_WIDTH / 2 + 4);
-    buildStand(RINK_LENGTH + 10, true, -1, RINK_WIDTH / 2 + 4);
-  }
-  if (level.stands === 'all') {
-    buildStand(RINK_WIDTH + 6, false, 1, RINK_LENGTH / 2 + 4);
-    buildStand(RINK_WIDTH + 6, false, -1, RINK_LENGTH / 2 + 4);
-  }
 
-  // Dark walls and ceiling to close the volume; tighter in the small hall
-  const hallH = level.stands === 'none' ? 14 : 24;
-  const hall = new THREE.Mesh(
-    new THREE.BoxGeometry(RINK_LENGTH + 50, hallH, RINK_WIDTH + 50),
-    new THREE.MeshStandardMaterial({ color: '#11151b', roughness: 1, side: THREE.BackSide }),
-  );
-  hall.position.y = hallH / 2 - 0.05;
-  group.add(hall);
+  const longLen = RINK_LENGTH + 12;
+  const shortLen = RINK_WIDTH + 8;
+  const longOff = RINK_WIDTH / 2 + 4;
+  const shortOff = RINK_LENGTH / 2 + 4;
 
-  // Light rig: emissive fixtures + real lights
-  const fixtureMat = new THREE.MeshStandardMaterial({
-    color: '#fff',
-    emissive: '#f4f8ff',
-    emissiveIntensity: 3,
-  });
-  const rigY = level.stands === 'none' ? 11 : 17;
-  for (let i = -2; i <= 2; i++) {
-    for (const z of [-6, 6]) {
-      const fixture = new THREE.Mesh(new THREE.BoxGeometry(4, 0.25, 1.2), fixtureMat);
-      fixture.position.set(i * 12, rigY, z);
-      group.add(fixture);
+  const buildSide = (length: number, alongX: boolean, side: 1 | -1, baseOff: number) => {
+    const lower = deck(length, alongX, side, baseOff, 0, spec.rows);
+    if (spec.upperRows > 0) {
+      // Upper deck set back behind a suite ring and lifted above the lower bowl
+      const upperOff = lower.far + 2.6;
+      deck(length, alongX, side, upperOff, lower.top + 2.4, spec.upperRows);
+    }
+  };
+
+  if (spec.rows > 0) {
+    buildSide(longLen, true, 1, longOff);
+    buildSide(longLen, true, -1, longOff);
+    if (spec.allSides) {
+      buildSide(shortLen, false, 1, shortOff);
+      buildSide(shortLen, false, -1, shortOff);
     }
   }
 
-  group.add(new THREE.HemisphereLight('#bdd4ea', '#1c222b', 0.55 * level.lightIntensity));
+  // ---- Roof / enclosure ----
+  if (spec.domed) {
+    // Globen-style: a ring wall topped by a spherical dome we sit inside
+    const R = 46;
+    const wallH = 13;
+    const wall = new THREE.Mesh(
+      new THREE.CylinderGeometry(R, R, wallH, 48, 1, true),
+      new THREE.MeshStandardMaterial({ color: '#10151c', roughness: 1, side: THREE.BackSide }),
+    );
+    wall.position.y = wallH / 2;
+    group.add(wall);
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(R, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({
+        color: '#dfe7f0',
+        emissive: '#9fb4cc',
+        emissiveIntensity: 0.25,
+        roughness: 0.85,
+        side: THREE.BackSide,
+      }),
+    );
+    dome.position.y = wallH;
+    group.add(dome);
+    // Ring of downlights where the dome springs from the wall
+    const lampMat = new THREE.MeshStandardMaterial({ color: '#fff', emissive: '#eaf2ff', emissiveIntensity: 2.5 });
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 8), lampMat);
+      lamp.position.set(Math.cos(a) * (R - 1.5), wallH + 0.5, Math.sin(a) * (R - 1.5));
+      group.add(lamp);
+    }
+  } else {
+    const h = spec.ceiling;
+    const hall = new THREE.Mesh(
+      new THREE.BoxGeometry(RINK_LENGTH + 70, h, RINK_WIDTH + 70),
+      new THREE.MeshStandardMaterial({
+        color: spec.barn ? '#2a2519' : '#11151b',
+        roughness: 1,
+        side: THREE.BackSide,
+      }),
+    );
+    hall.position.y = h / 2 - 0.05;
+    group.add(hall);
+  }
 
-  const key = new THREE.DirectionalLight('#fdf6e8', 2.2 * level.lightIntensity);
+  // ---- Exposed roof trusses in the barn ----
+  if (spec.barn) {
+    const beamMat = new THREE.MeshStandardMaterial({ color: '#5b4a32', roughness: 0.9 });
+    for (let i = -2; i <= 2; i++) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, RINK_WIDTH + 16), beamMat);
+      beam.position.set(i * 12, spec.ceiling - 1.2, 0);
+      group.add(beam);
+    }
+    const ridge = new THREE.Mesh(
+      new THREE.BoxGeometry(RINK_LENGTH + 16, 0.4, 0.4),
+      beamMat,
+    );
+    ridge.position.set(0, spec.ceiling - 0.8, 0);
+    group.add(ridge);
+  }
+
+  // ---- Lighting ----
+  group.add(
+    new THREE.HemisphereLight(
+      spec.barn ? '#cdbfa0' : '#bdd4ea',
+      '#1c222b',
+      (spec.barn ? 0.5 : 0.6) * level.lightIntensity,
+    ),
+  );
+  const key = new THREE.DirectionalLight(spec.barn ? '#ffe6b8' : '#fdf6e8', 2.1 * level.lightIntensity);
   key.position.set(18, 26, 12);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -142,19 +258,64 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
   key.shadow.camera.far = 70;
   key.shadow.bias = -0.0004;
   group.add(key);
-
-  const fill = new THREE.DirectionalLight('#cfe2f5', 0.7 * level.lightIntensity);
+  const fill = new THREE.DirectionalLight('#cfe2f5', 0.6 * level.lightIntensity);
   fill.position.set(-20, 20, -14);
   group.add(fill);
 
-  // Simple centre-hung scoreboard
-  if (level.scoreboard) {
+  // Roof light rig (emissive fixtures); grander tiers get more, brighter rows
+  const rigY = spec.domed ? 17 : spec.ceiling - 1.5;
+  const fixtureMat = new THREE.MeshStandardMaterial({
+    color: '#fff',
+    emissive: '#f4f8ff',
+    emissiveIntensity: spec.barn ? 1.6 : 3,
+  });
+  if (spec.barn) {
+    // A few bare warm work lamps slung under the ridge
+    const warm = new THREE.MeshStandardMaterial({ color: '#fff3d0', emissive: '#ffd27a', emissiveIntensity: 2 });
+    for (const x of [-14, 0, 14]) {
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 10), warm);
+      lamp.position.set(x, spec.ceiling - 1.6, 0);
+      group.add(lamp);
+      const pt = new THREE.PointLight('#ffdc9a', 0.5, 40);
+      pt.position.set(x, spec.ceiling - 1.6, 0);
+      group.add(pt);
+    }
+  } else {
+    const cols = 2 + level.tier; // wider rig for bigger arenas
+    for (let i = -cols; i <= cols; i++) {
+      for (const z of [-7, 7]) {
+        const fixture = new THREE.Mesh(new THREE.BoxGeometry(4, 0.25, 1.2), fixtureMat);
+        fixture.position.set((i / cols) * (RINK_LENGTH / 2), rigY, z);
+        group.add(fixture);
+      }
+    }
+  }
+
+  // Dramatic coloured spotlights raking the ice at the top tiers
+  if (spec.spotlights) {
+    const colors = ['#ff8a3d', '#3da5ff', '#ffd24a', '#7d5cff'];
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.4;
+      const sl = new THREE.SpotLight(colors[i], 120, 120, Math.PI / 9, 0.5, 1.2);
+      sl.position.set(Math.cos(a) * 26, rigY - 1, Math.sin(a) * 16);
+      sl.target.position.set(Math.cos(a) * 6, 0, Math.sin(a) * 4);
+      group.add(sl);
+      group.add(sl.target);
+    }
+  }
+
+  // ---- Centre-hung scoreboard ----
+  if (spec.scoreboard !== 'none') {
+    const jumbo = spec.scoreboard === 'jumbo';
+    const w = jumbo ? 7 : 5;
+    const screenH = jumbo ? 3.2 : 2.4;
     const board = new THREE.Group();
-    const cube = new THREE.Mesh(
-      new THREE.BoxGeometry(5, 2.4, 5),
-      new THREE.MeshStandardMaterial({ color: '#14181d', roughness: 0.6 }),
+    board.add(
+      new THREE.Mesh(
+        new THREE.BoxGeometry(w, screenH + 0.6, w),
+        new THREE.MeshStandardMaterial({ color: '#14181d', roughness: 0.6 }),
+      ),
     );
-    board.add(cube);
     const screenMat = new THREE.MeshStandardMaterial({
       color: '#0a1622',
       emissive: '#1c4d7a',
@@ -165,17 +326,36 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
       screenMat.color.set('#ffffff');
       screenMat.emissive.set('#ffffff');
       screenMat.emissiveMap = tex;
-      screenMat.emissiveIntensity = 0.9;
+      screenMat.emissiveIntensity = 0.95;
       screenMat.needsUpdate = true;
     });
     for (const ry of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-      const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.9), screenMat);
-      screen.position.set(Math.sin(ry) * 2.51, 0, Math.cos(ry) * 2.51);
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.88, screenH), screenMat);
+      screen.position.set(Math.sin(ry) * (w / 2 + 0.01), 0, Math.cos(ry) * (w / 2 + 0.01));
       screen.rotation.y = ry;
       board.add(screen);
     }
-    board.position.set(0, 12, 0);
+    board.position.set(0, spec.domed ? 22 : spec.ceiling - 6, 0);
     group.add(board);
+  }
+
+  // ---- Championship banners from the rafters ----
+  if (spec.banners > 0) {
+    const y = (spec.domed ? 20 : spec.ceiling - 4);
+    for (const side of [1, -1] as const) {
+      for (let i = 0; i < spec.banners; i++) {
+        const t = (i + 0.5) / spec.banners;
+        const mat = new THREE.MeshStandardMaterial({
+          map: bannerTexture(i + 1),
+          emissive: '#22335a',
+          emissiveIntensity: 0.5,
+          side: THREE.DoubleSide,
+        });
+        const banner = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 4.2), mat);
+        banner.position.set((t - 0.5) * RINK_LENGTH * 0.8, y, side * (RINK_WIDTH / 2 + 3));
+        group.add(banner);
+      }
+    }
   }
 
   scene.add(group);

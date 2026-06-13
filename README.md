@@ -65,6 +65,10 @@ mållinjen och parkerade mot långsidornas sarg medan du jobbar.
   0,5 m-rutnät – progress, poäng och minimap faller ut ur en och samma källa.
 - Rinken är 60 m lång med hörnradie 8,5 m och 30 m (Europa) eller 26 m
   (Nordamerika) bred; arena, målburar och maskinrumsport byggs om per nivå.
+- Arenan eskalerar med nivåns `tier` (0–4): från en kall träningslada med
+  synliga takstolar och ingen publik, via läktarskålar med växande publik, upp
+  till en kupolförsedd storarena med dubbla läktarrader, jumbotron, strålkastare
+  och hängande mästerskapsbanderoller. Allt parametriseras i `arena.ts`.
 - Den drivbara ytan är en signed-distance-funktion: unionen av rinken och
   garagekorridoren. När porten öppnas låter den korridoren överlappa in i
   rinken så att infarten blir mjuk, utan osynlig vägg vid porten.
