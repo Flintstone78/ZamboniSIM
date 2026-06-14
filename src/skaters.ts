@@ -1,16 +1,19 @@
 import * as THREE from 'three';
 import { RINK_LENGTH, RINK_WIDTH, ZAM_COLLISION_RADIUS } from './constants';
 import { rinkSignedDistance, rinkBoundaryNormal } from './rink';
+import { loadModelInto } from './assets';
 import type { Obstacles } from './obstacles';
 
 const SKATER_RADIUS = 0.55;
 const MAX_SPEED = 6.5;
 const ACCEL = 9;
+const SKATER_HEIGHT = 1.85; // metres, for normalising the GLB
+const MODEL_YAW = Math.PI; // align the model's facing with travel (+Z)
 const JERSEYS = ['#d32f2f', '#1565c0', '#2e7d32', '#f9a825', '#6a1b9a', '#00838f'];
 
 interface Skater {
   group: THREE.Group;
-  body: THREE.Mesh;
+  lean: THREE.Object3D; // the figure root, tilted into turns
   pos: THREE.Vector2;
   vel: THREE.Vector2;
   target: THREE.Vector2;
@@ -33,6 +36,9 @@ export class Skaters {
   constructor(count = 6) {
     for (let i = 0; i < count; i++) {
       const g = new THREE.Group();
+      // Procedural figure (fallback / shown until the GLB model loads). Wrapped
+      // in `lean` so the whole figure can tilt into turns.
+      const lean = new THREE.Group();
       const jersey = new THREE.MeshStandardMaterial({
         color: JERSEYS[i % JERSEYS.length],
         roughness: 0.7,
@@ -40,24 +46,25 @@ export class Skaters {
       const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.7, 4, 10), jersey);
       body.position.y = 0.95;
       body.castShadow = true;
-      g.add(body);
+      lean.add(body);
       const head = new THREE.Mesh(
         new THREE.SphereGeometry(0.17, 12, 12),
         new THREE.MeshStandardMaterial({ color: '#e8b98c', roughness: 0.8 }),
       );
       head.position.y = 1.5;
-      g.add(head);
+      lean.add(head);
       const stick = new THREE.Mesh(
         new THREE.BoxGeometry(0.05, 0.05, 1.3),
         new THREE.MeshStandardMaterial({ color: '#5b3a1e', roughness: 0.7 }),
       );
       stick.position.set(0.28, 0.25, 0.5);
       stick.rotation.x = 0.5;
-      g.add(stick);
+      lean.add(stick);
+      g.add(lean);
       this.group.add(g);
       this.skaters.push({
         group: g,
-        body,
+        lean,
         pos: new THREE.Vector2(),
         vel: new THREE.Vector2(),
         target: new THREE.Vector2(),
@@ -67,6 +74,26 @@ export class Skaters {
         active: false,
       });
     }
+
+    // Upgrade to the generated 3D player model when available (one normalised
+    // clone per skater); the procedural figures stay if the asset is missing.
+    loadModelInto('/assets/skater.glb', (model) => {
+      model.rotation.y = MODEL_YAW;
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      model.scale.setScalar(SKATER_HEIGHT / Math.max(size.y, 0.001));
+      box.setFromObject(model);
+      const c = box.getCenter(new THREE.Vector3());
+      model.position.set(-c.x, -box.min.y, -c.z);
+      model.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.castShadow = true;
+      });
+      for (const s of this.skaters) {
+        const clone = model.clone(true);
+        s.lean.clear();
+        s.lean.add(clone);
+      }
+    });
     this.reset();
   }
 
@@ -170,7 +197,7 @@ export class Skaters {
       // Render: stand on the ice, face travel direction, lean into the turn
       s.group.position.set(s.pos.x, 0, s.pos.y);
       if (s.vel.lengthSq() > 0.05) s.group.rotation.y = Math.atan2(s.vel.x, s.vel.y);
-      s.body.rotation.z = THREE.MathUtils.clamp(-s.vel.length() * 0.04, -0.3, 0.3);
+      s.lean.rotation.z = THREE.MathUtils.clamp(-s.vel.length() * 0.04, -0.3, 0.3);
     }
     return impact;
   }
