@@ -405,9 +405,11 @@ export class Game {
     if (!spot) return;
     const d = Math.hypot(spot.x - this.vehicle.position.x, spot.z - this.vehicle.position.y);
     if (d < 7) return; // only nag about spots you've actually driven past
-    const lines = ['You missed a spot! 👀', 'Ooooh, missed one!', 'Call that resurfaced?', 'A spot! Right there!'];
-    this.hud.showToast(lines[(Math.random() * lines.length) | 0]);
+    const lines = ['You missed a spot!', 'Ooooh, missed one!', 'Call that resurfaced?', 'A spot! Right there!'];
+    const line = lines[(Math.random() * lines.length) | 0];
+    this.hud.showToast(line);
     this.audio.jeer();
+    this.audio.speak(line);
     this.heckleTimer = 9; // cool off after an actual heckle
   }
 

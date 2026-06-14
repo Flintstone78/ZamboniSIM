@@ -170,12 +170,15 @@ function createMarkingsTexture(
       ctx.fillText(text, cx, cy);
       ctx.restore();
     };
+    // Neutral zone, between each blue line and the red centre line
     ad(0, -5.4, 9, 1.7, 'FRYSPUNKT', '#0e3a6b');
     ad(0, 5.4, 9, 1.7, 'POLAR TOOLS', '#7a1f1f');
-    ad(-15, -5.2, 7, 1.5, 'ISKRAFT', '#13633a');
-    ad(15, -5.2, 7, 1.5, 'NORDIC WHEELS', '#5a3a87');
-    ad(-15, 5.2, 7, 1.5, 'BLUE LINE BANK', '#0e3a6b');
-    ad(15, 5.2, 7, 1.5, 'FROST AB', '#7a1f1f');
+    // Centred inside the four end-zone faceoff circles
+    const fz = faceoffSpotZ();
+    ad(-FACEOFF_SPOT_X, -fz, 5.6, 1.5, 'ISKRAFT', '#13633a');
+    ad(FACEOFF_SPOT_X, -fz, 5.6, 1.5, 'NORDIC', '#5a3a87');
+    ad(-FACEOFF_SPOT_X, fz, 5.6, 1.5, 'BLUE LINE', '#0e3a6b');
+    ad(FACEOFF_SPOT_X, fz, 5.6, 1.5, 'FROST AB', '#7a1f1f');
   }
 
   ctx.restore();

@@ -91,6 +91,24 @@ export class AudioEngine {
     src.stop(t + 1);
   }
 
+  /** Speak a heckle line aloud via the browser's TTS (no-op if unavailable or
+   *  muted). A low, slightly slow voice reads like a grumpy rink announcer. */
+  speak(text: string): void {
+    if (this.muted) return;
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
+    if (!synth || typeof SpeechSynthesisUtterance === 'undefined') return;
+    try {
+      synth.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.95;
+      u.pitch = 0.7;
+      u.volume = 0.9;
+      synth.speak(u);
+    } catch {
+      /* TTS unavailable – the crowd groan still plays */
+    }
+  }
+
   /** A disappointed crowd groan – "ooooh, you missed a spot". */
   jeer(): void {
     const ctx = this.ensureContext();
