@@ -11,6 +11,68 @@ const SKATER_HEIGHT = 1.85; // metres, for normalising the GLB
 const MODEL_YAW = Math.PI; // align the model's facing with travel (+Z)
 const JERSEYS = ['#d32f2f', '#1565c0', '#2e7d32', '#f9a825', '#6a1b9a', '#00838f'];
 
+/** A blocky-but-readable hockey player: helmet, jersey, pants, socks, skates,
+ *  arms and a stick, posed mid-stride leaning forward (forward = +Z). */
+function buildSkaterFigure(jerseyHex: string): THREE.Group {
+  const fig = new THREE.Group();
+  const jersey = new THREE.MeshStandardMaterial({ color: jerseyHex, roughness: 0.7 });
+  const pants = new THREE.MeshStandardMaterial({ color: '#1a1f2b', roughness: 0.8 });
+  const sock = new THREE.MeshStandardMaterial({ color: jerseyHex, roughness: 0.85 });
+  const skin = new THREE.MeshStandardMaterial({ color: '#e8b98c', roughness: 0.8 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#15181f', roughness: 0.6 });
+
+  const part = (
+    geo: THREE.BufferGeometry,
+    mat: THREE.Material,
+    x: number, y: number, z: number,
+    rx = 0, ry = 0, rz = 0,
+  ): THREE.Mesh => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.set(rx, ry, rz);
+    m.castShadow = true;
+    fig.add(m);
+    return m;
+  };
+
+  // Legs in a stride: one trailing (-z), one leading (+z), with socks + skates
+  const legGeo = new THREE.CapsuleGeometry(0.11, 0.55, 3, 8);
+  const skateBoot = new THREE.BoxGeometry(0.16, 0.16, 0.34);
+  const blade = new THREE.BoxGeometry(0.03, 0.06, 0.36);
+  for (const dir of [-1, 1] as const) {
+    const lx = dir * 0.14;
+    part(legGeo, sock, lx, 0.5, dir * 0.18, dir * 0.32);
+    part(skateBoot, dark, lx, 0.13, dir * 0.42);
+    part(blade, dark, lx, 0.02, dir * 0.42);
+  }
+
+  // Hips / breezers
+  part(new THREE.BoxGeometry(0.46, 0.3, 0.5), pants, 0, 0.92, 0.02);
+
+  // Torso (jersey), hunched forward a touch
+  part(new THREE.CapsuleGeometry(0.27, 0.5, 4, 10), jersey, 0, 1.28, 0.04, 0.25);
+
+  // Shoulders + arms, the lead arm reaching forward to the stick
+  part(new THREE.BoxGeometry(0.62, 0.2, 0.34), jersey, 0, 1.5, 0.06);
+  const armGeo = new THREE.CapsuleGeometry(0.08, 0.42, 3, 8);
+  part(armGeo, jersey, -0.34, 1.32, 0.16, 0.7); // trailing arm
+  part(armGeo, jersey, 0.34, 1.28, 0.34, 1.0); // lead arm forward
+  const gloveGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
+  part(gloveGeo, dark, -0.36, 1.06, 0.34);
+  part(gloveGeo, dark, 0.38, 1.04, 0.62);
+
+  // Neck + head + helmet
+  part(new THREE.SphereGeometry(0.15, 12, 12), skin, 0, 1.74, 0.08);
+  part(new THREE.SphereGeometry(0.17, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), jersey, 0, 1.78, 0.07);
+
+  // Stick: from the lead glove down and forward to the ice
+  const shaft = part(new THREE.BoxGeometry(0.04, 0.04, 1.5), dark, 0.4, 0.55, 1.0, 0.62);
+  shaft.castShadow = false;
+  part(new THREE.BoxGeometry(0.05, 0.14, 0.34), dark, 0.4, 0.08, 1.66, 0.2);
+
+  return fig;
+}
+
 interface Skater {
   group: THREE.Group;
   lean: THREE.Object3D; // the figure root, tilted into turns
@@ -36,30 +98,10 @@ export class Skaters {
   constructor(count = 6) {
     for (let i = 0; i < count; i++) {
       const g = new THREE.Group();
-      // Procedural figure (fallback / shown until the GLB model loads). Wrapped
+      // Detailed procedural player (shown until the GLB model loads). Wrapped
       // in `lean` so the whole figure can tilt into turns.
       const lean = new THREE.Group();
-      const jersey = new THREE.MeshStandardMaterial({
-        color: JERSEYS[i % JERSEYS.length],
-        roughness: 0.7,
-      });
-      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.7, 4, 10), jersey);
-      body.position.y = 0.95;
-      body.castShadow = true;
-      lean.add(body);
-      const head = new THREE.Mesh(
-        new THREE.SphereGeometry(0.17, 12, 12),
-        new THREE.MeshStandardMaterial({ color: '#e8b98c', roughness: 0.8 }),
-      );
-      head.position.y = 1.5;
-      lean.add(head);
-      const stick = new THREE.Mesh(
-        new THREE.BoxGeometry(0.05, 0.05, 1.3),
-        new THREE.MeshStandardMaterial({ color: '#5b3a1e', roughness: 0.7 }),
-      );
-      stick.position.set(0.28, 0.25, 0.5);
-      stick.rotation.x = 0.5;
-      lean.add(stick);
+      lean.add(buildSkaterFigure(JERSEYS[i % JERSEYS.length]));
       g.add(lean);
       this.group.add(g);
       this.skaters.push({
