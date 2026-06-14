@@ -128,6 +128,13 @@ export class Gate {
     this.door = door;
     this.group.add(door);
 
+    // The gate stands open for the whole resurfacing: the door starts rolled
+    // fully up and out of sight, so there's never a closed/hovering panel.
+    this.doorOpen = 1;
+    this.opening = true;
+    this.door.position.y = DOOR_TRAVEL;
+    this.door.visible = false;
+
     // Close the board cross-section at both sides of the gate opening
     const edgeMat = new THREE.MeshStandardMaterial({ color: '#e8e8e8', roughness: 0.6 });
     for (const x of [GATE_X_MIN, GATE_X_MAX]) {
@@ -151,6 +158,8 @@ export class Gate {
       this.doorOpen = Math.min(1, this.doorOpen + (dt * DOOR_SPEED) / DOOR_TRAVEL);
       this.door.position.y = this.doorOpen * DOOR_TRAVEL;
     }
+    // Hide the door once it's fully up – it's tucked away, gate open
+    this.door.visible = this.doorOpen < 0.99;
   }
 
   /**
