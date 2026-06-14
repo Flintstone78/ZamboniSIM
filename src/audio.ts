@@ -91,6 +91,27 @@ export class AudioEngine {
     src.stop(t + 1);
   }
 
+  /** A disappointed crowd groan – "ooooh, you missed a spot". */
+  jeer(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer(ctx, 1);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(700, t);
+    filter.frequency.exponentialRampToValueAtTime(280, t + 0.7); // falling "ohh"
+    filter.Q.value = 1.2;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.05, t + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.0008, t + 0.9);
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(t);
+    src.stop(t + 1);
+  }
+
   /** Board impact: low thump + noise burst, scaled by impact speed. */
   crash(impact: number): void {
     const ctx = this.ensureContext();

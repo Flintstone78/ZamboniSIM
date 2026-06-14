@@ -74,7 +74,9 @@ function roundedRectPath(
  * grey outside the rounded rink outline. Canvas x maps to world X, canvas y to
  * world Z (top of canvas = -Z side).
  */
-function createMarkingsTexture(): { texture: THREE.CanvasTexture; canvas: HTMLCanvasElement } {
+function createMarkingsTexture(
+  iceAds: boolean,
+): { texture: THREE.CanvasTexture; canvas: HTMLCanvasElement } {
   const W = 2048;
   const H = 1024;
   const canvas = document.createElement('canvas');
@@ -144,6 +146,36 @@ function createMarkingsTexture(): { texture: THREE.CanvasTexture; canvas: HTMLCa
       ix > 0 ? Math.PI * 1.5 : Math.PI / 2,
     );
     ctx.fill();
+  }
+
+  // Sponsor logos frozen into the ice (top-tier arenas only). Drawn slightly
+  // translucent so they read as printed under the surface, in the neutral and
+  // end zones where they don't fight the lines.
+  if (iceAds) {
+    const ad = (x: number, z: number, wM: number, hM: number, text: string, color: string) => {
+      const w = wM * sx;
+      const h = hM * sy;
+      const cx = px(x);
+      const cy = py(z);
+      ctx.save();
+      ctx.globalAlpha = 0.42;
+      ctx.fillStyle = color;
+      roundedRectPath(ctx, cx, cy, w, h, h * 0.22);
+      ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 ${Math.round(h * 0.5)}px "Segoe UI", system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, cx, cy);
+      ctx.restore();
+    };
+    ad(0, -5.4, 9, 1.7, 'FRYSPUNKT', '#0e3a6b');
+    ad(0, 5.4, 9, 1.7, 'POLAR TOOLS', '#7a1f1f');
+    ad(-15, -5.2, 7, 1.5, 'ISKRAFT', '#13633a');
+    ad(15, -5.2, 7, 1.5, 'NORDIC WHEELS', '#5a3a87');
+    ad(-15, 5.2, 7, 1.5, 'BLUE LINE BANK', '#0e3a6b');
+    ad(15, 5.2, 7, 1.5, 'FROST AB', '#7a1f1f');
   }
 
   ctx.restore();
@@ -242,10 +274,10 @@ export interface Rink {
   colorCanvas: HTMLCanvasElement;
 }
 
-export function createRink(): Rink {
+export function createRink(iceAds = false): Rink {
   const group = new THREE.Group();
 
-  const markings = createMarkingsTexture();
+  const markings = createMarkingsTexture(iceAds);
   const iceMaterial = new THREE.MeshPhysicalMaterial({
     map: markings.texture,
     roughness: 1, // modulated by the dynamic roughness map from IceResurfacer

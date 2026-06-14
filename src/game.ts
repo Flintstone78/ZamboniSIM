@@ -84,6 +84,8 @@ export class Game {
   private boostMeter = 1; // 0..1 turbo reserve
   private boosting = false;
   private flowSurge = 0; // seconds of 2x flow left (from a power-up)
+  private skatersAnnounced = false;
+  private heckleTimer = 4;
 
   private state: GameState = 'splash';
   private level: LevelDef = EUROPE_LEVELS[0];
@@ -231,7 +233,7 @@ export class Game {
     this.scene.remove(this.gate.group);
     this.gate = new Gate();
     this.scene.add(this.gate.group);
-    this.rink = createRink();
+    this.rink = createRink(this.level.tier >= 3); // ice ads on top-tier arenas
     this.rink.iceMaterial.roughnessMap = this.ice.texture;
     this.ice.attachColorMap(this.rink.colorTexture, this.rink.colorCanvas);
     this.scene.add(this.rink.group);
@@ -259,6 +261,8 @@ export class Game {
     this.shake = 0;
     this.boostMeter = 1;
     this.flowSurge = 0;
+    this.skatersAnnounced = false;
+    this.heckleTimer = 4;
     this.powerups.reset();
     this.hud.setCombo(1, 0);
     this.state = 'playing';
@@ -306,10 +310,12 @@ export class Game {
       }
       this.obstacles.update(dt, this.vehicle.position, this.vehicle.velocity);
 
-      // In the final minute, impatient players spill onto the ice
-      if (this.level.timeLimit - this.elapsed <= 60 && !this.skaters.isActive) {
-        this.skaters.spawn();
-        this.hud.showToast('Players on the ice — dodge them!');
+      // Players trickle on from a third of the way in, more the longer you take
+      const frac = this.elapsed / this.level.timeLimit;
+      const wantSkaters = frac < 0.3 ? 0 : Math.min(6, 1 + Math.floor(((frac - 0.3) / 0.7) * 5));
+      if (this.skaters.ensureActive(wantSkaters) > 0 && !this.skatersAnnounced) {
+        this.skatersAnnounced = true;
+        this.hud.showToast('Players are taking the ice — dodge them!');
       }
       const skaterImpact = this.skaters.update(dt, this.vehicle.position, this.obstacles);
       if (skaterImpact > 0) {
@@ -333,6 +339,7 @@ export class Game {
       }
 
       this.updateCombo(dt, scraping);
+      this.updateHeckle(dt);
 
       if (this.ice.coverage >= COVERAGE_GOAL) this.finish(true);
       else if (this.elapsed >= this.level.timeLimit) this.finish(false);
@@ -386,6 +393,22 @@ export class Game {
       this.flowSurge = POWERUP_FLOW_SECONDS;
       this.hud.popup('2X FLOW!');
     }
+  }
+
+  /** Crowd heckles when you leave an unresurfaced patch boxed in behind you. */
+  private updateHeckle(dt: number): void {
+    this.heckleTimer -= dt;
+    if (this.heckleTimer > 0) return;
+    this.heckleTimer = 3;
+    if (this.ice.coverage < 0.12 || this.ice.coverage > 0.97) return;
+    const spot = this.ice.findMissedSpot();
+    if (!spot) return;
+    const d = Math.hypot(spot.x - this.vehicle.position.x, spot.z - this.vehicle.position.y);
+    if (d < 7) return; // only nag about spots you've actually driven past
+    const lines = ['You missed a spot! 👀', 'Ooooh, missed one!', 'Call that resurfaced?', 'A spot! Right there!'];
+    this.hud.showToast(lines[(Math.random() * lines.length) | 0]);
+    this.audio.jeer();
+    this.heckleTimer = 9; // cool off after an actual heckle
   }
 
   private breakCombo(): void {

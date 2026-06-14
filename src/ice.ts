@@ -188,6 +188,43 @@ export class IceResurfacer {
     return this.lastPaint[row * GRID_COLS + col] >= 0;
   }
 
+  /** Find an unpainted paintable cell that's boxed in by resurfaced ice – a
+   *  "missed spot" the player skipped. Returns its world centre, or null.
+   *  Scans from a random offset so repeated calls surface different holes. */
+  findMissedSpot(): { x: number; z: number } | null {
+    const cellL = RINK_LENGTH / GRID_COLS;
+    const cellW = RINK_WIDTH / GRID_ROWS;
+    const total = GRID_COLS * GRID_ROWS;
+    const start = Math.floor(Math.random() * total);
+    for (let n = 0; n < total; n++) {
+      const idx = (start + n) % total;
+      if (this.lastPaint[idx] !== 0) continue; // painted (>0) or not paintable (<0)
+      const c = idx % GRID_COLS;
+      const r = (idx / GRID_COLS) | 0;
+      if (c < 1 || c >= GRID_COLS - 1 || r < 1 || r >= GRID_ROWS - 1) continue;
+      let painted = 0;
+      let paintable = 0;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const v = this.lastPaint[(r + dr) * GRID_COLS + (c + dc)];
+          if (v < 0) continue;
+          paintable++;
+          if (v > 0) painted++;
+        }
+      }
+      // Mostly hemmed in by resurfaced ice – a gap you left behind, not the
+      // straight frontier of the strip you're currently laying
+      if (paintable >= 6 && painted >= paintable - 2) {
+        return {
+          x: -RINK_LENGTH / 2 + (c + 0.5) * cellL,
+          z: -RINK_WIDTH / 2 + (r + 0.5) * cellW,
+        };
+      }
+    }
+    return null;
+  }
+
   /** Fraction of paintable cells inside a world rectangle that are resurfaced.
    *  Used to detect when the strip behind a goal cage has been cleaned. */
   regionCoverage(xMin: number, xMax: number, zMin: number, zMax: number): number {

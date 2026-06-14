@@ -17,18 +17,18 @@ interface Skater {
   retarget: number; // seconds until picking a new wander point
   shoveCd: number; // debounce stick-handling a puck
   hitCd: number; // debounce bumping the zamboni
+  active: boolean;
 }
 
 /**
- * Impatient players who pour onto the ice in the final minute, chasing the
- * loose pucks and stick-handling them around. They are moving hazards: bumping
- * one costs points and shoves you, but they actively dodge the zamboni so a
- * clean run is always possible.
+ * Impatient players who trickle onto the ice as the clock winds down, chasing
+ * the loose pucks and stick-handling them around. They are moving hazards:
+ * bumping one costs points and shoves you, but they actively dodge the zamboni
+ * so a clean run is always possible. More of them appear the longer you take.
  */
 export class Skaters {
   readonly group = new THREE.Group();
   private skaters: Skater[] = [];
-  private active = false;
 
   constructor(count = 6) {
     for (let i = 0; i < count; i++) {
@@ -64,33 +64,42 @@ export class Skaters {
         retarget: 0,
         shoveCd: 0,
         hitCd: 0,
+        active: false,
       });
     }
     this.reset();
   }
 
-  get isActive(): boolean {
-    return this.active;
+  get activeCount(): number {
+    let n = 0;
+    for (const s of this.skaters) if (s.active) n++;
+    return n;
   }
 
   reset(): void {
-    this.active = false;
-    this.group.visible = false;
+    for (const s of this.skaters) {
+      s.active = false;
+      s.group.visible = false;
+    }
   }
 
-  /** Players hop the boards and take the ice (called in the final minute). */
-  spawn(): void {
-    if (this.active) return;
-    this.active = true;
-    this.group.visible = true;
-    this.skaters.forEach((s, i) => {
-      const x = ((i + 0.5) / this.skaters.length - 0.5) * (RINK_LENGTH - 10);
-      s.pos.set(x, -RINK_WIDTH / 2 + 2); // come on from the bench side
+  /** Make sure at least `n` players are on the ice; returns how many were just
+   *  sent on (so Game can announce the first one). New ones hop the boards. */
+  ensureActive(n: number): number {
+    let added = 0;
+    for (let i = 0; i < this.skaters.length && this.activeCount < n; i++) {
+      const s = this.skaters[i];
+      if (s.active) continue;
+      s.active = true;
+      s.group.visible = true;
+      s.pos.set(((i + 0.5) / this.skaters.length - 0.5) * (RINK_LENGTH - 10), -RINK_WIDTH / 2 + 2);
       s.vel.set(0, 0);
       s.retarget = 0;
       s.shoveCd = 0;
       s.hitCd = 0;
-    });
+      added++;
+    }
+    return added;
   }
 
   /**
@@ -98,9 +107,9 @@ export class Skaters {
    * with the zamboni. Returns the impact speed of a fresh bump, else 0.
    */
   update(dt: number, vehiclePos: THREE.Vector2, obstacles: Obstacles): number {
-    if (!this.active) return 0;
     let impact = 0;
     for (const s of this.skaters) {
+      if (!s.active) continue;
       s.shoveCd = Math.max(0, s.shoveCd - dt);
       s.hitCd = Math.max(0, s.hitCd - dt);
       s.retarget -= dt;
