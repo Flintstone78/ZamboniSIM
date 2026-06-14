@@ -5,7 +5,7 @@ import type { LevelDef } from './levels';
 
 // The zamboni tunnel cuts a vomitory-style gap through the -Z stands so the
 // equipment-room corridor isn't walled in (and the reveal camera isn't buried).
-const GATE_GAP: [number, number] = [GATE_X_MIN - 2, GATE_X_MAX + 2];
+const GATE_GAP: [number, number] = [GATE_X_MIN - 0.5, GATE_X_MAX + 0.5];
 
 /**
  * Per-tier arena recipe. The five career tiers escalate from a cold practice

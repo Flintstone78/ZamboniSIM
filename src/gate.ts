@@ -2,13 +2,16 @@ import * as THREE from 'three';
 import {
   RINK_WIDTH,
   BOARD_HEIGHT,
+  GLASS_HEIGHT,
   GATE_X_MIN,
   GATE_X_MAX,
   GARAGE_DEPTH,
-  GARAGE_WALL_HEIGHT,
 } from './constants';
 import { rinkSignedDistance } from './rink';
 
+// The tunnel is sized to the board+glass opening so it reads as a clean portal
+// from the rink, not an oversized garage box poking through the stands.
+const TUNNEL_H = BOARD_HEIGHT + GLASS_HEIGHT;
 const DOOR_TRAVEL = 2.4;
 const DOOR_SPEED = 2.4; // metres per second (open in ~1s)
 
@@ -65,40 +68,37 @@ export class Gate {
     const cx = this.gateCenterX;
     const cz = (this.boardZ + this.corridorZMin) / 2;
 
-    // Corridor floor
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(width + 2.4, GARAGE_DEPTH), concrete);
+    // Corridor floor (matches the opening width)
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(width + 0.3, GARAGE_DEPTH), concrete);
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(cx, -0.01, cz);
     floor.receiveShadow = true;
     this.group.add(floor);
 
-    // Side walls + back wall + roof of the equipment room
-    for (const side of [-1, 1]) {
+    // Clean rectangular tunnel flush with the opening: two side walls at the
+    // jamb lines, a ceiling at the glass top, and a back wall.
+    for (const side of [-1, 1] as const) {
       const wall = new THREE.Mesh(
-        new THREE.BoxGeometry(0.3, GARAGE_WALL_HEIGHT, GARAGE_DEPTH),
+        new THREE.BoxGeometry(0.2, TUNNEL_H, GARAGE_DEPTH),
         wallMat,
       );
-      wall.position.set(
-        cx + side * (width / 2 + 0.15 + 1.0),
-        GARAGE_WALL_HEIGHT / 2,
-        cz,
-      );
+      wall.position.set(cx + side * (width / 2 + 0.1), TUNNEL_H / 2, cz);
       this.group.add(wall);
     }
     const back = new THREE.Mesh(
-      new THREE.BoxGeometry(width + 2.6, GARAGE_WALL_HEIGHT, 0.3),
+      new THREE.BoxGeometry(width + 0.4, TUNNEL_H, 0.3),
       wallMat,
     );
-    back.position.set(cx, GARAGE_WALL_HEIGHT / 2, this.corridorZMin - 0.15);
+    back.position.set(cx, TUNNEL_H / 2, this.corridorZMin - 0.15);
     this.group.add(back);
     const roof = new THREE.Mesh(
-      new THREE.BoxGeometry(width + 2.6, 0.25, GARAGE_DEPTH + 0.6),
+      new THREE.BoxGeometry(width + 0.4, 0.22, GARAGE_DEPTH),
       wallMat,
     );
-    roof.position.set(cx, GARAGE_WALL_HEIGHT, cz);
+    roof.position.set(cx, TUNNEL_H, cz);
     this.group.add(roof);
 
-    // Cold strip lights in the garage ceiling
+    // Cold strip lights in the tunnel ceiling
     const lampMat = new THREE.MeshStandardMaterial({
       color: '#fff',
       emissive: '#eaf4ff',
@@ -106,7 +106,7 @@ export class Gate {
     });
     for (const lz of [this.boardZ - 2.5, this.boardZ - 6.5]) {
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 1.6), lampMat);
-      lamp.position.set(cx, GARAGE_WALL_HEIGHT - 0.18, lz);
+      lamp.position.set(cx, TUNNEL_H - 0.16, lz);
       this.group.add(lamp);
     }
 
@@ -135,13 +135,20 @@ export class Gate {
     this.door.position.y = DOOR_TRAVEL;
     this.door.visible = false;
 
-    // Close the board cross-section at both sides of the gate opening
+    // White jamb posts framing the opening up to the glass top
     const edgeMat = new THREE.MeshStandardMaterial({ color: '#e8e8e8', roughness: 0.6 });
     for (const x of [GATE_X_MIN, GATE_X_MAX]) {
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.08, BOARD_HEIGHT, 0.28), edgeMat);
-      cap.position.set(x, BOARD_HEIGHT / 2, this.boardZ);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.1, TUNNEL_H, 0.3), edgeMat);
+      cap.position.set(x, TUNNEL_H / 2, this.boardZ);
       this.group.add(cap);
     }
+    // Red lintel across the top, matching the board cap
+    const lintel = new THREE.Mesh(
+      new THREE.BoxGeometry(width + 0.3, 0.12, 0.32),
+      new THREE.MeshStandardMaterial({ color: '#b71c1c', roughness: 0.45 }),
+    );
+    lintel.position.set(cx, TUNNEL_H, this.boardZ);
+    this.group.add(lintel);
   }
 
   /** Start the door animation (called when a level begins). */
