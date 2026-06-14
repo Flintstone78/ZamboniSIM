@@ -1,9 +1,25 @@
+/** Pick a native English (preferably male, British/American) TTS voice so the
+ *  heckles aren't read by the OS's local-language voice with an accent. */
+function pickEnglishMaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  const en = voices.filter((v) => /^en[-_]?/i.test(v.lang));
+  if (en.length === 0) return null;
+  const male = /\b(male|david|daniel|george|james|fred|alex|arthur|guy|mark|tom|oliver|ryan|brian|matthew|google uk english male|microsoft (david|mark|guy))\b/i;
+  const female = /\b(female|zira|susan|hazel|samantha|victoria|karen|moira|tessa|fiona|serena|catherine|google us english)\b/i;
+  return (
+    en.find((v) => male.test(v.name) && /en[-_]?gb/i.test(v.lang)) ??
+    en.find((v) => male.test(v.name)) ??
+    en.find((v) => !female.test(v.name) && /en[-_]?gb/i.test(v.lang)) ??
+    en.find((v) => !female.test(v.name)) ??
+    en[0]
+  );
+}
+
 /**
  * All sound is synthesised with the Web Audio API – no asset files. Engine =
  * detuned saws through a lowpass, scrape = looped noise through a bandpass,
  * crowd = slow noise swells. The context is created lazily on the first user
  * gesture to satisfy autoplay policies, so the game runs silent (and without
- * errors) until the player touches a key.
+ * errors) until the player touches a key. Heckles use the browser's TTS.
  */
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -16,6 +32,7 @@ export class AudioEngine {
   private crowdGain!: GainNode;
   private crowdFilter!: BiquadFilterNode;
   private muted = localStorage.getItem('zambonisim.muted') === '1';
+  private heckleVoice: SpeechSynthesisVoice | null = null;
 
   constructor() {
     const unlock = (): void => {
@@ -25,6 +42,14 @@ export class AudioEngine {
     };
     window.addEventListener('keydown', unlock);
     window.addEventListener('pointerdown', unlock);
+
+    // Voices load asynchronously; grab an English male one for the heckles
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
+    if (synth) {
+      const refresh = () => (this.heckleVoice = pickEnglishMaleVoice(synth.getVoices()));
+      refresh();
+      synth.addEventListener?.('voiceschanged', refresh);
+    }
   }
 
   get isMuted(): boolean {
@@ -98,11 +123,15 @@ export class AudioEngine {
     const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
     if (!synth || typeof SpeechSynthesisUtterance === 'undefined') return;
     try {
+      if (!this.heckleVoice) this.heckleVoice = pickEnglishMaleVoice(synth.getVoices());
       synth.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 0.95;
-      u.pitch = 0.7;
-      u.volume = 0.9;
+      // Force English so a Swedish system voice doesn't read it with an accent
+      u.lang = this.heckleVoice?.lang ?? 'en-GB';
+      if (this.heckleVoice) u.voice = this.heckleVoice;
+      u.rate = 0.96;
+      u.pitch = 0.8;
+      u.volume = 0.95;
       synth.speak(u);
     } catch {
       /* TTS unavailable – the crowd groan still plays */
