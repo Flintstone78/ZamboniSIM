@@ -35,7 +35,7 @@ await page.waitForTimeout(800);
 await page.keyboard.up('w');
 await page.screenshot({ path: '/tmp/top.png' });
 
-console.log('coverage:', await page.locator('#progress-pct').textContent());
-console.log('time:', await page.locator('#time-value').textContent());
+console.log('progress:', await page.locator('#progress-pct').textContent());
+console.log('score:', await page.locator('#score-value').textContent());
 console.log('errors:', errors.length ? errors : 'none');
 await browser.close();

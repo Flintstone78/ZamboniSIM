@@ -1,21 +1,10 @@
 import * as THREE from 'three';
-import {
-  RINK_LENGTH,
-  RINK_WIDTH,
-  SWATH_REAR_OFFSET,
-  COVERAGE_GOAL,
-  SCORE_COVERAGE_MAX,
-  SCORE_PRECISION_MAX,
-  SCORE_TIME_MAX,
-  SCORE_TIME_PER_SECOND,
-  SCORE_COLLISION_PENALTY,
-} from './constants';
-import { createRink } from './rink';
-import { IceResurfacer } from './ice';
-import { createZamboni } from './zamboni';
 import { Vehicle, Input } from './vehicle';
 import { Hud } from './hud';
-import { createArena } from './arena';
+import { createZamboni } from './zamboni';
+import type { Level } from './level';
+import { RinkLevel } from './rinkLevel';
+import { ParkingLevel } from './parkingLevel';
 
 type CameraMode = 'chase' | 'fpv' | 'top';
 const CAMERA_MODES: CameraMode[] = ['chase', 'fpv', 'top'];
@@ -23,17 +12,19 @@ const CAMERA_MODES: CameraMode[] = ['chase', 'fpv', 'top'];
 export class Game {
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
-  private ice = new IceResurfacer();
   private vehicle: Vehicle;
   private zamboni = createZamboni();
   private input = new Input();
   private hud: Hud;
+  private envMap: THREE.Texture | null = null;
+
+  private levels: Level[];
+  private level!: Level;
 
   private cameraMode: CameraMode = 'chase';
   private camPos = new THREE.Vector3();
   private elapsed = 0;
-  private collisions = 0;
-  private finished = false;
+  private finishShown = false;
   private minimapTimer = 0;
 
   constructor(private renderer: THREE.WebGLRenderer) {
@@ -44,29 +35,29 @@ export class Game {
       300,
     );
 
-    const rink = createRink();
-    rink.iceMaterial.roughnessMap = this.ice.texture;
-    this.ice.attachColorMap(rink.colorTexture, rink.colorCanvas);
-    this.scene.add(rink.group);
-    createArena(this.scene);
     this.scene.add(this.zamboni);
-
     this.vehicle = new Vehicle({
       onCollision: (impact) => {
-        if (this.finished) return;
-        this.collisions++;
-        this.hud.showToast(impact > 2.5 ? 'KRASCH! −300 p' : 'Dunk i sargen! −300 p');
+        if (this.level.finished) return;
+        this.level.onCollision(impact);
       },
     });
 
     this.hud = new Hud(() => this.restart());
+
+    const toast = (msg: string) => this.hud.showToast(msg);
+    this.levels = [new RinkLevel(toast), new ParkingLevel(toast)];
+
     this.input.onTap['c'] = () => {
       const i = CAMERA_MODES.indexOf(this.cameraMode);
       this.cameraMode = CAMERA_MODES[(i + 1) % CAMERA_MODES.length];
     };
     this.input.onTap['r'] = () => this.restart();
+    this.input.onTap[' '] = () => this.level.action(this.vehicle);
+    this.input.onTap['1'] = () => this.setLevel(0);
+    this.input.onTap['2'] = () => this.setLevel(1);
 
-    this.restart();
+    this.setLevel(0);
 
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -76,19 +67,40 @@ export class Game {
   }
 
   setEnvironment(envMap: THREE.Texture): void {
+    this.envMap = envMap;
     this.scene.environment = envMap;
   }
 
+  /** Debug/test access used by scripts/screenshot.mjs. */
+  get debugLevel(): Level {
+    return this.level;
+  }
+  get debugVehicle(): Vehicle {
+    return this.vehicle;
+  }
+
+  /** Switch to a level by index and start it fresh. */
+  setLevel(index: number): void {
+    if (this.level) this.scene.remove(this.level.group);
+    this.level = this.levels[index];
+    this.scene.add(this.level.group);
+    this.scene.background = this.level.background;
+    this.scene.fog = this.level.fog;
+    this.scene.environment = this.envMap;
+    this.vehicle.bounds = this.level.bounds;
+    this.hud.setHelp(this.level.helpText);
+    this.restart();
+  }
+
   restart(): void {
-    this.ice.reset();
-    // Start by the boards at one end, facing down the rink
-    this.vehicle.reset(-RINK_LENGTH / 2 + 6, -RINK_WIDTH / 2 + 4, Math.PI / 2);
+    this.level.reset();
+    const p = this.level.startPose;
+    this.vehicle.reset(p.x, p.z, p.heading);
     this.elapsed = 0;
-    this.collisions = 0;
-    this.finished = false;
+    this.finishShown = false;
     this.hud.hideFinish();
     this.syncZamboni();
-    this.camPos.set(0, 0, 0); // forces a snap on the next camera update
+    this.camPos.set(0, 0, 0); // forces a camera snap next update
     this.updateCamera(1);
   }
 
@@ -99,65 +111,25 @@ export class Game {
 
   /** One simulation step without rendering (also used by headless tests). */
   tick(dt: number): void {
-    if (!this.finished) {
+    if (!this.level.finished) {
       this.elapsed += dt;
       this.vehicle.update(dt, this.input.throttle, this.input.steer);
-
-      // The conditioner only lays clean ice while rolling forwards
-      if (this.vehicle.forwardSpeed > 0.3) {
-        const fwd = this.vehicle.forward;
-        const bladeX = this.vehicle.position.x - fwd.x * SWATH_REAR_OFFSET;
-        const bladeZ = this.vehicle.position.y - fwd.y * SWATH_REAR_OFFSET;
-        this.ice.paint(bladeX, bladeZ, this.vehicle.heading, this.elapsed);
-      } else {
-        this.ice.liftBlade();
-      }
-
-      if (this.ice.coverage >= COVERAGE_GOAL) this.finish();
+      this.level.update(dt, this.vehicle, this.elapsed);
+    }
+    if (this.level.finished && !this.finishShown) {
+      this.finishShown = true;
+      this.hud.showFinish(this.level.result(this.elapsed));
     }
 
     this.syncZamboni();
     this.updateCamera(dt);
+    this.hud.update(this.level.hud(this.vehicle, this.elapsed), this.vehicle.forwardSpeed);
 
-    this.hud.update(
-      Math.min(1, this.ice.coverage / COVERAGE_GOAL),
-      this.ice.precision,
-      this.elapsed,
-      this.collisions,
-      this.currentScore(),
-      this.vehicle.forwardSpeed,
-    );
     this.minimapTimer -= dt;
     if (this.minimapTimer <= 0) {
       this.minimapTimer = 0.2;
-      this.hud.drawMinimap(this.ice);
-      this.hud.drawMinimapMarker(
-        (this.vehicle.position.x + RINK_LENGTH / 2) / RINK_LENGTH,
-        (this.vehicle.position.y + RINK_WIDTH / 2) / RINK_WIDTH,
-        this.vehicle.heading,
-      );
+      this.hud.drawMinimap(this.level, this.vehicle);
     }
-  }
-
-  private currentScore(): number {
-    return (
-      this.ice.coverage * SCORE_COVERAGE_MAX +
-      this.ice.precision * SCORE_PRECISION_MAX * this.ice.coverage +
-      Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND) *
-        this.ice.coverage -
-      this.collisions * SCORE_COLLISION_PENALTY
-    );
-  }
-
-  private finish(): void {
-    this.finished = true;
-    const coverageScore = this.ice.coverage * SCORE_COVERAGE_MAX;
-    const precisionScore = this.ice.precision * SCORE_PRECISION_MAX;
-    const timeScore = Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND);
-    const collisionPenalty = this.collisions * SCORE_COLLISION_PENALTY;
-    const total = coverageScore + precisionScore + timeScore - collisionPenalty;
-    const stars = total >= 13000 ? 3 : total >= 10500 ? 2 : 1;
-    this.hud.showFinish({ coverageScore, precisionScore, timeScore, collisionPenalty, total, stars });
   }
 
   private syncZamboni(): void {
@@ -170,10 +142,10 @@ export class Game {
     const pos = this.vehicle.position;
 
     if (this.cameraMode === 'top') {
-      // Overview: whole rink from above, long axis across the screen
-      this.camera.up.set(0, 0, -1);
-      this.camera.position.set(0, 46, 0);
-      this.camera.lookAt(0, 0, 0);
+      const tv = this.level.topView();
+      this.camera.up.copy(tv.up);
+      this.camera.position.copy(tv.position);
+      this.camera.lookAt(tv.lookAt);
       this.camPos.copy(this.camera.position);
       return;
     }
@@ -181,21 +153,13 @@ export class Game {
 
     if (this.cameraMode === 'fpv') {
       // Driver's eye from the rear platform
-      this.camera.position.set(
-        pos.x - fwd.x * 1.4,
-        2.25,
-        pos.y - fwd.y * 1.4,
-      );
+      this.camera.position.set(pos.x - fwd.x * 1.4, 2.25, pos.y - fwd.y * 1.4);
       this.camera.lookAt(pos.x + fwd.x * 12, 1.3, pos.y + fwd.y * 12);
       this.camPos.copy(this.camera.position);
       return;
     }
 
-    const target = new THREE.Vector3(
-      pos.x - fwd.x * 8.5,
-      4.6,
-      pos.y - fwd.y * 8.5,
-    );
+    const target = new THREE.Vector3(pos.x - fwd.x * 8.5, 4.6, pos.y - fwd.y * 8.5);
     if (this.camPos.lengthSq() === 0) this.camPos.copy(target);
     this.camPos.lerp(target, Math.min(1, dt * 3.5));
     this.camera.position.copy(this.camPos);

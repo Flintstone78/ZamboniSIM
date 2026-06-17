@@ -19,10 +19,16 @@ npm run dev
 | `W` / `↑` | Gas |
 | `S` / `↓` | Broms / back |
 | `A` `D` / `←` `→` | Styrning |
+| `Mellanslag` | Dumpa snö (bonusbanan) |
 | `C` | Växla kamera (chase → förarvy → översikt) |
+| `1` / `2` | Byt bana (Ishall / Parkeringen) |
 | `R` | Börja om |
 
-### Poäng
+## Banor
+
+### 1. Ishallen
+
+Spola hela isen så perfekt och snabbt som möjligt.
 
 - **Täckning** – varje kvadratmeter spolad is ger poäng. Spåret läggs bara när
   du kör framåt (skrapan är nere).
@@ -30,6 +36,22 @@ npm run dev
   precisionen.
 - **Tidsbonus** – ju snabbare isen är klar, desto större bonus.
 - **Krockar** – varje smäll i sargen kostar 300 poäng.
+
+### 2. Parkeringen (bonus)
+
+Ute på arenans parkering ska du bli av med snön innan publiken kommer. Kör fram
+till en **ledig ruta** och tryck `Mellanslag` för att dumpa snö där. Men det är
+en kapplöpning: med jämna mellanrum kör en bil in och tar en ledig ruta (den
+blinkar rött strax innan den parkerar). Hinner du dumpa snö i rutan först kör
+bilen vidare – annars är rutan förlorad, och en parkerad bil är ett hinder att
+undvika.
+
+- **Snöade rutor** – 800 poäng per ruta du hinner dumpa i.
+- **Tidsbonus** – fyller du parkeringen snabbt får du mer.
+- **Krockar** – att dunka i en parkerad bil kostar 300 poäng.
+
+Banan tar slut när alla rutor är fyllda (av dig eller bilarna) eller när tiden
+går ut.
 
 ## Teknik
 

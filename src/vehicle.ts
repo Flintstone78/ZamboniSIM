@@ -10,10 +10,19 @@ import {
   LATERAL_GRIP,
   ZAM_COLLISION_RADIUS,
 } from './constants';
-import { rinkSignedDistance, rinkBoundaryNormal } from './rink';
 
 export interface VehicleEvents {
   onCollision: (impactSpeed: number) => void;
+}
+
+/**
+ * A static collision boundary the vehicle is confined to. Negative signed
+ * distance means inside; the normal points outward (toward the wall). Each
+ * level supplies its own – the rink boards, the parking-lot perimeter, etc.
+ */
+export interface Bounds {
+  signedDistance(x: number, z: number): number;
+  normal(x: number, z: number): THREE.Vector2;
 }
 
 /**
@@ -27,6 +36,7 @@ export class Vehicle {
   velocity = new THREE.Vector2(0, 0);
   steer = 0;
 
+  bounds: Bounds | null = null;
   private collisionCooldown = 0;
 
   constructor(private events: VehicleEvents) {}
@@ -77,26 +87,56 @@ export class Vehicle {
     this.velocity.copy(lateral).addScaledVector(newFwd, vF);
     this.position.addScaledVector(this.velocity, dt);
 
-    this.resolveBoardCollision();
+    this.resolveBounds();
   }
 
-  private resolveBoardCollision(): void {
-    const d = rinkSignedDistance(this.position.x, this.position.y);
+  private resolveBounds(): void {
+    if (!this.bounds) return;
+    const d = this.bounds.signedDistance(this.position.x, this.position.y);
     const overlap = d + ZAM_COLLISION_RADIUS;
     if (overlap <= 0) return;
 
-    const n = rinkBoundaryNormal(this.position.x, this.position.y);
+    const n = this.bounds.normal(this.position.x, this.position.y);
     this.position.addScaledVector(n, -overlap);
 
     const vAlongN = this.velocity.dot(n);
     if (vAlongN > 0) {
-      // Kill the outward velocity and most of the rest – boards are not bouncy
+      // Kill the outward velocity and most of the rest – walls are not bouncy
       this.velocity.addScaledVector(n, -vAlongN * 1.1);
       this.velocity.multiplyScalar(0.4);
-      if (this.collisionCooldown === 0 && vAlongN > 0.8) {
-        this.collisionCooldown = 1.2;
-        this.events.onCollision(vAlongN);
-      }
+      this.reportImpact(vAlongN);
+    }
+  }
+
+  /**
+   * Resolve a collision against a circular obstacle (e.g. a parked car),
+   * pushing the vehicle out and reporting the impact. `radius` is the
+   * obstacle's radius; the vehicle's own radius is added on top.
+   */
+  collideCircle(cx: number, cz: number, radius: number): void {
+    const dx = this.position.x - cx;
+    const dz = this.position.y - cz;
+    const dist = Math.hypot(dx, dz);
+    const minDist = radius + ZAM_COLLISION_RADIUS;
+    if (dist >= minDist) return;
+
+    const n = dist > 1e-4
+      ? new THREE.Vector2(dx / dist, dz / dist)
+      : new THREE.Vector2(0, 1);
+    this.position.addScaledVector(n, minDist - dist);
+
+    const vAlongN = this.velocity.dot(n);
+    if (vAlongN < 0) {
+      this.velocity.addScaledVector(n, -vAlongN * 1.1);
+      this.velocity.multiplyScalar(0.5);
+      this.reportImpact(-vAlongN);
+    }
+  }
+
+  private reportImpact(speed: number): void {
+    if (this.collisionCooldown === 0 && speed > 0.8) {
+      this.collisionCooldown = 1.2;
+      this.events.onCollision(speed);
     }
   }
 }

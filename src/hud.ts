@@ -1,28 +1,21 @@
-import { GRID_COLS, GRID_ROWS } from './constants';
-import type { IceResurfacer } from './ice';
+import type { Level, HudState, FinishResult } from './level';
+import type { Vehicle } from './vehicle';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
 
-export interface FinishStats {
-  coverageScore: number;
-  precisionScore: number;
-  timeScore: number;
-  collisionPenalty: number;
-  total: number;
-  stars: number;
-}
-
 export class Hud {
+  private levelName = el('level-name');
+  private progressLabel = el('progress-label');
   private progressPct = el('progress-pct');
   private progressFill = el('progress-bar-fill');
-  private timeValue = el('time-value');
-  private precisionValue = el('precision-value');
-  private collisionValue = el('collision-value');
+  private statRows = el('stat-rows');
   private scoreValue = el('score-value');
   private speedValue = el('speed-value');
+  private helpHint = el('help-hint');
   private toast = el('toast');
   private finishOverlay = el('finish-overlay');
+  private finishBreakdown = el('finish-breakdown');
   private minimapCtx = el<HTMLCanvasElement>('minimap').getContext('2d')!;
   private toastTimer = 0;
 
@@ -30,58 +23,37 @@ export class Hud {
     el('restart-btn').addEventListener('click', onRestart);
   }
 
-  update(
-    coverage: number,
-    precision: number,
-    timeSeconds: number,
-    collisions: number,
-    score: number,
-    speedMs: number,
-  ): void {
-    this.progressPct.textContent = `${(coverage * 100).toFixed(1)}%`;
-    this.progressFill.style.width = `${(coverage * 100).toFixed(1)}%`;
-    const m = Math.floor(timeSeconds / 60);
-    const s = Math.floor(timeSeconds % 60);
-    this.timeValue.textContent = `${m}:${s.toString().padStart(2, '0')}`;
-    this.precisionValue.textContent = `${Math.round(precision * 100)}%`;
-    this.collisionValue.textContent = `${collisions}`;
-    this.scoreValue.textContent = `${Math.max(0, Math.round(score))} p`;
+  setHelp(levelHelp: string): void {
+    this.helpHint.textContent = levelHelp;
+  }
+
+  update(state: HudState, speedMs: number): void {
+    this.levelName.textContent = state.levelName;
+    this.progressLabel.textContent = state.progressLabel;
+    this.progressPct.textContent = state.progressText;
+    this.progressFill.style.width = `${Math.min(100, state.progress * 100).toFixed(1)}%`;
+
+    while (this.statRows.children.length < state.rows.length) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<span class="rowlabel"></span><span class="value"></span>';
+      this.statRows.appendChild(row);
+    }
+    while (this.statRows.children.length > state.rows.length) {
+      this.statRows.lastChild!.remove();
+    }
+    state.rows.forEach((r, i) => {
+      const row = this.statRows.children[i];
+      row.querySelector('.rowlabel')!.textContent = r.label;
+      row.querySelector('.value')!.textContent = r.value;
+    });
+
+    this.scoreValue.textContent = `${Math.max(0, Math.round(state.score))} p`;
     this.speedValue.textContent = `${Math.round(Math.abs(speedMs) * 3.6)}`;
   }
 
-  drawMinimap(ice: IceResurfacer): void {
-    const ctx = this.minimapCtx;
-    const w = ctx.canvas.width;
-    const h = ctx.canvas.height;
-    const cw = w / GRID_COLS;
-    const ch = h / GRID_ROWS;
-    ctx.fillStyle = '#10161f';
-    ctx.fillRect(0, 0, w, h);
-    for (let r = 0; r < GRID_ROWS; r++) {
-      for (let c = 0; c < GRID_COLS; c++) {
-        if (!ice.isCellPaintable(c, r)) continue;
-        ctx.fillStyle = ice.isCellPainted(c, r) ? '#4fc3f7' : '#39424e';
-        ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
-      }
-    }
-  }
-
-  /** Marker for the zamboni on the minimap, in rink-normalised coords (0..1). */
-  drawMinimapMarker(u: number, v: number, heading: number): void {
-    const ctx = this.minimapCtx;
-    const x = u * ctx.canvas.width;
-    const y = v * ctx.canvas.height;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(Math.PI / 2 - heading);
-    ctx.fillStyle = '#ffca28';
-    ctx.beginPath();
-    ctx.moveTo(6, 0);
-    ctx.lineTo(-4, 4);
-    ctx.lineTo(-4, -4);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+  drawMinimap(level: Level, vehicle: Vehicle): void {
+    level.drawMinimap(this.minimapCtx, vehicle);
   }
 
   showToast(text: string): void {
@@ -91,14 +63,23 @@ export class Hud {
     this.toastTimer = window.setTimeout(() => (this.toast.style.opacity = '0'), 1400);
   }
 
-  showFinish(stats: FinishStats): void {
+  showFinish(result: FinishResult): void {
+    el('finish-title').textContent = result.title;
     el('finish-stars').textContent =
-      '★'.repeat(stats.stars) + '☆'.repeat(3 - stats.stars);
-    el('finish-coverage').textContent = `+${Math.round(stats.coverageScore)}`;
-    el('finish-precision').textContent = `+${Math.round(stats.precisionScore)}`;
-    el('finish-time').textContent = `+${Math.round(stats.timeScore)}`;
-    el('finish-collisions').textContent = `−${Math.round(stats.collisionPenalty)}`;
-    el('finish-total').textContent = `${Math.max(0, Math.round(stats.total))} p`;
+      '★'.repeat(result.stars) + '☆'.repeat(3 - result.stars);
+    this.finishBreakdown.innerHTML = '';
+    for (const r of result.rows) {
+      const div = document.createElement('div');
+      div.innerHTML = `${r.label}<span class="value"></span>`;
+      div.querySelector('.value')!.textContent = r.value;
+      this.finishBreakdown.appendChild(div);
+    }
+    const totalRow = document.createElement('div');
+    totalRow.style.marginTop = '8px';
+    totalRow.innerHTML = `Totalt<span class="value" id="finish-total"></span>`;
+    totalRow.querySelector('.value')!.textContent = `${Math.max(0, Math.round(result.total))} p`;
+    this.finishBreakdown.appendChild(totalRow);
+
     this.finishOverlay.style.display = 'flex';
   }
 

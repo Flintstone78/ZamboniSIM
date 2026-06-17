@@ -4,11 +4,11 @@ import { RINK_LENGTH, RINK_WIDTH } from './constants';
 /**
  * The surroundings: concrete apron, tiered stands, ceiling rig and lights.
  * This is the part that gets swapped out per arena (local rink vs MSG) –
- * the rink itself is regulation-sized everywhere.
+ * the rink itself is regulation-sized everywhere. Returns a group; the
+ * caller owns scene background/fog.
  */
-export function createArena(scene: THREE.Scene): void {
-  scene.background = new THREE.Color('#0a0e14');
-  scene.fog = new THREE.Fog('#0a0e14', 60, 160);
+export function createArena(): THREE.Group {
+  const group = new THREE.Group();
 
   // Concrete floor around the rink
   const floor = new THREE.Mesh(
@@ -18,7 +18,7 @@ export function createArena(scene: THREE.Scene): void {
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.02;
   floor.receiveShadow = true;
-  scene.add(floor);
+  group.add(floor);
 
   // Tiered stands along both long sides and behind the goals
   const seatColors = ['#15418c', '#0f3370', '#1a4da3'];
@@ -39,7 +39,7 @@ export function createArena(scene: THREE.Scene): void {
       const y = tierHeight / 2 + i * tierHeight;
       if (alongX) m.position.set(0, y, side * dist);
       else m.position.set(side * dist, y, 0);
-      scene.add(m);
+      group.add(m);
     }
   };
   buildStand(RINK_LENGTH + 10, true, 1, RINK_WIDTH / 2 + 4);
@@ -53,7 +53,7 @@ export function createArena(scene: THREE.Scene): void {
     new THREE.MeshStandardMaterial({ color: '#11151b', roughness: 1, side: THREE.BackSide }),
   );
   hall.position.y = 12 - 0.05;
-  scene.add(hall);
+  group.add(hall);
 
   // Light rig: emissive fixtures + real lights
   const fixtureMat = new THREE.MeshStandardMaterial({
@@ -65,11 +65,11 @@ export function createArena(scene: THREE.Scene): void {
     for (const z of [-6, 6]) {
       const fixture = new THREE.Mesh(new THREE.BoxGeometry(4, 0.25, 1.2), fixtureMat);
       fixture.position.set(i * 12, 17, z);
-      scene.add(fixture);
+      group.add(fixture);
     }
   }
 
-  scene.add(new THREE.HemisphereLight('#bdd4ea', '#1c222b', 0.55));
+  group.add(new THREE.HemisphereLight('#bdd4ea', '#1c222b', 0.55));
 
   const key = new THREE.DirectionalLight('#fdf6e8', 2.2);
   key.position.set(18, 26, 12);
@@ -81,11 +81,11 @@ export function createArena(scene: THREE.Scene): void {
   key.shadow.camera.bottom = -30;
   key.shadow.camera.far = 70;
   key.shadow.bias = -0.0004;
-  scene.add(key);
+  group.add(key);
 
   const fill = new THREE.DirectionalLight('#cfe2f5', 0.7);
   fill.position.set(-20, 20, -14);
-  scene.add(fill);
+  group.add(fill);
 
   // Simple centre-hung scoreboard
   const board = new THREE.Group();
@@ -106,5 +106,7 @@ export function createArena(scene: THREE.Scene): void {
     board.add(screen);
   }
   board.position.set(0, 12, 0);
-  scene.add(board);
+  group.add(board);
+
+  return group;
 }

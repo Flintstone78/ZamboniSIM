@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Bounds } from './vehicle';
 import {
   RINK_LENGTH,
   RINK_WIDTH,
@@ -32,6 +33,12 @@ export function rinkBoundaryNormal(x: number, z: number): THREE.Vector2 {
   const nz = rinkSignedDistance(x, z + e) - rinkSignedDistance(x, z - e);
   return new THREE.Vector2(nx, nz).normalize();
 }
+
+/** Vehicle collision boundary for the rink (the boards). */
+export const rinkBounds: Bounds = {
+  signedDistance: rinkSignedDistance,
+  normal: rinkBoundaryNormal,
+};
 
 function roundedRectShape(halfL: number, halfW: number, r: number): THREE.Shape {
   const s = new THREE.Shape();

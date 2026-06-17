@@ -43,3 +43,24 @@ export const SCORE_PRECISION_MAX = 2000;
 export const SCORE_TIME_MAX = 4000;
 export const SCORE_TIME_PER_SECOND = 12;
 export const SCORE_COLLISION_PENALTY = 300;
+
+// Parking-lot bonus level. The lot is centred at the origin with a single
+// drive lane running along X and a row of stalls on each side of it.
+export const LOT_WIDTH = 44; // along X (interior, between perimeter snowbanks)
+export const LOT_DEPTH = 30; // along Z
+export const STALL_WIDTH = 2.7; // along X
+export const STALL_DEPTH = 5.4; // along Z
+export const LANE_HALF = 4.0; // half-width of the central drive lane
+export const STALLS_PER_ROW = 7;
+
+export const PARK_TIME_LIMIT = 80; // seconds before the round ends
+export const CAR_WARN_TIME = 1.8; // "incoming" blink before a car commits
+export const CAR_PARK_TIME = 1.1; // slide-in animation duration
+export const CAR_SPAWN_FIRST = 4.0; // first car arrives after this long
+export const CAR_SPAWN_INTERVAL = 3.0; // seconds between subsequent arrivals
+export const DUMP_RANGE = 3.2; // max distance from blade to a stall centre to dump
+export const CAR_COLLISION_RADIUS = 1.7;
+
+export const SCORE_PER_STALL = 800;
+export const SCORE_PARK_TIME_MAX = 4000;
+export const SCORE_PARK_TIME_PER_SECOND = 45;
