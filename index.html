@@ -259,16 +259,16 @@
     <div id="app"></div>
 
     <div id="hud-progress" class="hud panel">
-      <div class="label"><span>Resurfaced</span><span id="progress-pct">0%</span></div>
+      <div class="label"><span id="progress-label">Resurfaced</span><span id="progress-pct">0%</span></div>
       <div id="progress-bar-track"><div id="progress-bar-fill"></div></div>
       <canvas id="minimap" width="252" height="126"></canvas>
     </div>
 
     <div id="hud-stats" class="hud panel">
-      <div class="row">Time <span class="value" id="time-value">0:00</span></div>
-      <div class="row">Precision <span class="value" id="precision-value">100%</span></div>
-      <div class="row">Crashes <span class="value" id="collision-value">0</span></div>
-      <div class="row">Players <span class="value" id="cone-value">0</span></div>
+      <div class="row"><span id="stat-label-1">Time</span> <span class="value" id="time-value">0:00</span></div>
+      <div class="row"><span id="stat-label-2">Precision</span> <span class="value" id="precision-value">100%</span></div>
+      <div class="row"><span id="stat-label-3">Crashes</span> <span class="value" id="collision-value">0</span></div>
+      <div class="row" id="stat-row-4"><span id="stat-label-4">Players</span> <span class="value" id="cone-value">0</span></div>
       <div class="row"><span id="score-value">0</span></div>
     </div>
 

@@ -126,6 +126,27 @@ export class Vehicle {
       if (vAlongN > 0.8) this.registerHit(vAlongN);
     }
   }
+
+  /** Push out of a circular obstacle (a parked car). Returns the impact speed
+   *  of a fresh hit (debounced), else 0. */
+  collideCircle(cx: number, cz: number, radius: number): number {
+    const offset = new THREE.Vector2(this.position.x - cx, this.position.y - cz);
+    const dist = offset.length();
+    const minDist = radius + ZAM_COLLISION_RADIUS;
+    if (dist >= minDist) return 0;
+    const n = dist > 1e-4 ? offset.divideScalar(dist) : new THREE.Vector2(1, 0);
+    this.position.set(cx + n.x * minDist, cz + n.y * minDist);
+    const vAlongN = -this.velocity.dot(n);
+    if (vAlongN > 0) {
+      this.velocity.addScaledVector(n, vAlongN * 1.1);
+      this.velocity.multiplyScalar(0.5);
+      if (vAlongN > 0.8 && this.collisionCooldown <= 0) {
+        this.collisionCooldown = 1.2;
+        return vAlongN;
+      }
+    }
+    return 0;
+  }
 }
 
 /** Push two vehicles apart when they collide; returns impact speed or 0. */

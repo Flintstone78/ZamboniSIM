@@ -18,13 +18,15 @@ import {
   BOOST_REFILL,
   POWERUP_TIME_BONUS,
   POWERUP_FLOW_SECONDS,
+  PARK_TIME_LIMIT,
   setRinkStandard,
   RinkStandard,
 } from './constants';
 import { createRink, Rink } from './rink';
 import { IceResurfacer } from './ice';
 import { createZamboni, animateBlade } from './zamboni';
-import { Vehicle, Input } from './vehicle';
+import { Vehicle, Input, type Boundary } from './vehicle';
+import { Parking } from './parkingLevel';
 import { Hud } from './hud';
 import { createArena } from './arena';
 import { Obstacles } from './obstacles';
@@ -93,6 +95,12 @@ export class Game {
   private rink: Rink | null = null;
   private arenaGroup: THREE.Group | null = null;
 
+  // Parking-lot bonus minigame (an alternate gameplay mode)
+  private mode: 'rink' | 'parking' = 'rink';
+  private parking: Parking | null = null;
+  private activeBoundary!: Boundary; // the vehicle's current collision boundary
+  private gateBoundary!: Boundary; // the rink gate boundary (reused per rink level)
+
   private cameraMode: CameraMode = 'chase';
   private camPos = new THREE.Vector3();
   private elapsed = 0;
@@ -113,11 +121,22 @@ export class Game {
     this.scene.add(this.gate.group);
     this.scene.add(this.zamboni.group);
 
-    // The boundary delegates to the current gate, which is swapped per level
+    // The vehicle's boundary delegates to whichever level is active (rink gate
+    // or parking-lot perimeter); the perimeter is swapped per level.
+    this.gateBoundary = {
+      sdf: (x, z) => this.gate.boundarySignedDistance(x, z),
+      normal: (x, z) => this.gate.boundaryNormal(x, z),
+    };
+    this.activeBoundary = this.gateBoundary;
     this.vehicle = new Vehicle(
       {
         onCollision: (impact) => {
           if (this.state !== 'playing') return;
+          if (this.mode === 'parking') {
+            // The lot perimeter is soft snowbanks – just a little jolt
+            this.shake = Math.min(1, 0.2 + impact * 0.12);
+            return;
+          }
           this.collisions++;
           this.audio.crash(impact);
           this.breakCombo();
@@ -126,8 +145,8 @@ export class Game {
         },
       },
       {
-        sdf: (x, z) => this.gate.boundarySignedDistance(x, z),
-        normal: (x, z) => this.gate.boundaryNormal(x, z),
+        sdf: (x, z) => this.activeBoundary.sdf(x, z),
+        normal: (x, z) => this.activeBoundary.normal(x, z),
       },
     );
 
@@ -177,6 +196,10 @@ export class Game {
     for (const code of this.input.bladeCodes(0)) {
       this.input.onTap[code] = () => {
         if (this.state !== 'playing') return;
+        if (this.mode === 'parking') {
+          this.parking?.action(this.vehicle); // SPACE dumps snow
+          return;
+        }
         this.vehicle.bladeDown = !this.vehicle.bladeDown;
         this.hud.setBlade(this.vehicle.bladeDown);
         this.hud.showToast(this.vehicle.bladeDown ? 'Blade down' : 'Blade up');
@@ -220,9 +243,34 @@ export class Game {
     this.hud.showMenu();
   }
 
+  /** Toggle the rink-specific scene groups (hidden during the parking bonus). */
+  private setRinkGroupsVisible(v: boolean): void {
+    for (const g of [
+      this.gate.group,
+      this.obstacles.group,
+      this.goals.group,
+      this.skaters.group,
+      this.spray.points,
+      this.powerups.group,
+    ] as THREE.Object3D[]) {
+      g.visible = v;
+    }
+    if (this.rink) this.rink.group.visible = v;
+    if (this.arenaGroup) this.arenaGroup.visible = v;
+  }
+
   /** (Re)build the world for a level and start driving. */
   startLevel(levelId: string): void {
     this.level = levelById(levelId);
+    if (this.level.parking) {
+      this.startParking();
+      return;
+    }
+    this.mode = 'rink';
+    this.activeBoundary = this.gateBoundary;
+    this.hud.setRinkLabels();
+    if (this.parking) this.parking.group.visible = false;
+    this.setRinkGroupsVisible(true);
     // Region (and thus rink width) follows the level being played
     this.standard = this.level.region;
     setRinkStandard(this.standard);
@@ -276,6 +324,109 @@ export class Game {
     this.updateCamera(1);
   }
 
+  /** Start the parking-lot bonus minigame. */
+  private startParking(): void {
+    this.mode = 'parking';
+    this.setRinkGroupsVisible(false);
+    if (!this.parking) {
+      this.parking = new Parking(
+        (msg) => this.hud.showToast(msg),
+        (impact) => {
+          this.audio.crash(impact);
+          this.shake = Math.min(1, 0.4 + impact * 0.15);
+        },
+      );
+      this.scene.add(this.parking.group);
+    } else {
+      this.parking.reset();
+    }
+    this.parking.group.visible = true;
+    this.scene.background = this.parking.background;
+    this.scene.fog = this.parking.fog;
+    this.activeBoundary = this.parking.bounds;
+    this.vehicle.reset(this.parking.startPose.x, this.parking.startPose.z, this.parking.startPose.heading);
+    this.vehicle.bladeDown = false;
+    this.elapsed = 0;
+    this.shake = 0;
+    this.boostMeter = 1;
+    this.boosting = false;
+    this.state = 'playing';
+    this.hud.hideFinish();
+    this.hud.hideMenu();
+    this.hud.setLevel(this.level);
+    this.hud.showToast('Dump snow on free stalls — press SPACE!');
+    this.syncZamboni();
+    this.camPos.set(0, 0, 0);
+    this.updateCamera(1);
+  }
+
+  private tickParking(dt: number): void {
+    const p = this.parking!;
+    let throttle = 0;
+    if (this.state === 'playing') {
+      this.elapsed += dt;
+      throttle = this.input.throttle(0);
+      const boosting = this.input.boosting(0) && this.boostMeter > 0.04 && throttle > 0;
+      this.boostMeter = boosting
+        ? Math.max(0, this.boostMeter - BOOST_DRAIN * dt)
+        : Math.min(1, this.boostMeter + BOOST_REFILL * dt);
+      this.vehicle.update(dt, throttle, this.input.steer(0), boosting ? 1 : 0);
+      this.boosting = boosting;
+      p.update(dt, this.vehicle, this.elapsed);
+      if (p.finished) this.finishParking();
+    }
+    this.shake = Math.max(0, this.shake - dt * 2.2);
+    animateBlade(this.zamboni.blade, false, dt);
+    this.syncZamboni();
+    this.updateCamera(dt);
+    this.audio.update(this.state === 'playing' ? this.vehicle.forwardSpeed : 0, throttle, false);
+
+    const timeLeft = Math.max(0, PARK_TIME_LIMIT - this.elapsed);
+    this.hud.updateParking(
+      p.snowedCount,
+      p.total,
+      timeLeft,
+      p.occupiedCount,
+      p.crashCount,
+      p.score(this.elapsed),
+      this.vehicle.forwardSpeed,
+    );
+    this.hud.setBoost(this.boostMeter, this.boosting);
+    this.minimapTimer -= dt;
+    if (this.minimapTimer <= 0) {
+      this.minimapTimer = 0.2;
+      this.hud.drawCustomMinimap((ctx) => p.drawMinimap(ctx, this.vehicle));
+    }
+  }
+
+  private finishParking(): void {
+    this.state = 'finished';
+    const p = this.parking!;
+    const res = p.result(this.elapsed);
+    this.audio.finish();
+    this.audio.cheer(1.2);
+    saveStars('parking', res.stars);
+    const prevBest = loadLevelBests()['parking'] ?? 0;
+    const isRecord = saveLevelBest('parking', res.total);
+    if (isRecord && getName()) void submitScore(getName(), careerScore());
+    this.hud.showFinish({
+      success: true,
+      title: res.title,
+      coverage: p.total ? p.snowedCount / p.total : 0,
+      coverageScore: res.stallScore,
+      precisionScore: 0,
+      timeScore: res.timeBonus,
+      flowBonus: 0,
+      collisionPenalty: res.collisionPenalty,
+      conePenalty: 0,
+      total: res.total,
+      stars: res.stars,
+      best: Math.max(prevBest, Math.round(res.total)),
+      isRecord,
+      hasNext: false,
+    });
+  }
+
   update(dt: number): void {
     this.tick(dt);
     this.renderer.render(this.scene, this.camera);
@@ -283,6 +434,10 @@ export class Game {
 
   /** One simulation step without rendering (also used by headless tests). */
   tick(dt: number): void {
+    if (this.mode === 'parking') {
+      this.tickParking(dt);
+      return;
+    }
     let scraping = false;
     this.gate.update(dt);
 
@@ -528,10 +683,17 @@ export class Game {
     const pos = this.vehicle.position;
 
     if (this.cameraMode === 'top') {
-      // Overview: whole rink from above, long axis across the screen
-      this.camera.up.set(0, 0, -1);
-      this.camera.position.set(0, 46, 0);
-      this.camera.lookAt(0, 0, 0);
+      // Overview from above (the parking lot has its own framing)
+      if (this.mode === 'parking' && this.parking) {
+        const tv = this.parking.topView();
+        this.camera.up.copy(tv.up);
+        this.camera.position.copy(tv.position);
+        this.camera.lookAt(tv.lookAt);
+      } else {
+        this.camera.up.set(0, 0, -1);
+        this.camera.position.set(0, 46, 0);
+        this.camera.lookAt(0, 0, 0);
+      }
       this.camPos.copy(this.camera.position);
       return;
     }
@@ -558,7 +720,7 @@ export class Game {
     // While still in the equipment room the chase camera would peer over the
     // low garage walls into the void – keep it inside the corridor and low,
     // looking through the open gate, for a clean reveal as the zamboni exits.
-    if (pos.y < this.gate.gateZ + 2) {
+    if (this.mode === 'rink' && pos.y < this.gate.gateZ + 2) {
       target.z = Math.max(target.z, this.gate.cameraMinZ);
       target.y = 2.7;
     }

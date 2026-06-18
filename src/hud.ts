@@ -19,6 +19,7 @@ const escapeHtml = (s: string): string =>
 
 export interface FinishStats {
   success: boolean;
+  title?: string;
   coverage: number;
   coverageScore: number;
   precisionScore: number;
@@ -55,6 +56,11 @@ export class Hud {
   private speedValue = el('speed-value');
   private bladeValue = el('blade-indicator');
   private levelName = el('level-name');
+  private progressLabel = el('progress-label');
+  private statLabel1 = el('stat-label-1');
+  private statLabel2 = el('stat-label-2');
+  private statLabel3 = el('stat-label-3');
+  private statRow4 = el('stat-row-4');
   private toast = el('toast');
   private finishOverlay = el('finish-overlay');
   private menuOverlay = el('menu-overlay');
@@ -237,6 +243,47 @@ export class Hud {
     this.speedValue.textContent = `${Math.round(Math.abs(speedMs) * 3.6)}`;
   }
 
+  /** Restore the rink HUD labels (after a parking round). */
+  setRinkLabels(): void {
+    this.progressLabel.textContent = 'Resurfaced';
+    this.statLabel1.textContent = 'Time';
+    this.statLabel2.textContent = 'Precision';
+    this.statLabel3.textContent = 'Crashes';
+    this.statRow4.style.display = '';
+  }
+
+  /** HUD for the parking-lot bonus: snowed stalls, time, cars, crashes. */
+  updateParking(
+    snowed: number,
+    total: number,
+    timeLeftSeconds: number,
+    cars: number,
+    crashes: number,
+    score: number,
+    speedMs: number,
+  ): void {
+    this.progressLabel.textContent = 'Snowed stalls';
+    this.statLabel1.textContent = 'Time';
+    this.statLabel2.textContent = 'Cars';
+    this.statLabel3.textContent = 'Crashes';
+    this.statRow4.style.display = 'none';
+    this.progressPct.textContent = `${snowed} / ${total}`;
+    this.progressFill.style.width = `${(total ? snowed / total : 0) * 100}%`;
+    const m = Math.floor(timeLeftSeconds / 60);
+    const s = Math.floor(timeLeftSeconds % 60);
+    this.timeValue.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+    this.timeValue.classList.toggle('low', timeLeftSeconds < 15);
+    this.precisionValue.textContent = `${cars}`;
+    this.collisionValue.textContent = `${crashes}`;
+    this.scoreValue.textContent = `${Math.max(0, Math.round(score))} pts`;
+    this.speedValue.textContent = `${Math.round(Math.abs(speedMs) * 3.6)}`;
+  }
+
+  /** Let a level draw its own minimap (e.g. the parking-lot stall map). */
+  drawCustomMinimap(fn: (ctx: CanvasRenderingContext2D) => void): void {
+    fn(this.minimapCtx);
+  }
+
   drawMinimap(ice: IceResurfacer): void {
     const ctx = this.minimapCtx;
     const w = ctx.canvas.width;
@@ -280,7 +327,8 @@ export class Hud {
   }
 
   showFinish(stats: FinishStats): void {
-    el('finish-title').textContent = stats.success ? 'Ice resurfaced!' : "Time's up!";
+    el('finish-title').textContent =
+      stats.title ?? (stats.success ? 'Ice resurfaced!' : "Time's up!");
     el('finish-stars').textContent = stats.success ? starString(stats.stars) : '—';
     el('finish-coverage').textContent = stats.success
       ? `+${Math.round(stats.coverageScore)}`

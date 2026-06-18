@@ -31,7 +31,27 @@ export interface LevelDef {
   tier: number;
   /** Bonus level: requires 3 stars on every regular level in the region. */
   bonus?: boolean;
+  /** Parking-lot bonus minigame (different gameplay from the rink). */
+  parking?: boolean;
 }
+
+/** The parking-lot bonus minigame – always available, shown for both regions. */
+export const PARKING_LEVEL: LevelDef = {
+  id: 'parking',
+  region: 'europa',
+  name: 'The Lot',
+  division: 'Bonus minigame',
+  description: 'Out on the lot: dump snow on free stalls before the cars grab them. SPACE dumps.',
+  timeLimit: 80,
+  stands: 'none',
+  scoreboard: false,
+  cones: 0,
+  pucks: 0,
+  hallColor: '#070a12',
+  lightIntensity: 1,
+  tier: 0,
+  parking: true,
+};
 
 // Shared difficulty curve for both ladders (tier 0..4). Cones are gone (they
 // made a perfect score impossible); the late-game hazard is roaming skaters,
@@ -84,10 +104,12 @@ export const NA_LEVELS = buildLadder('nordamerika', [
 export const ALL_LEVELS = [...EUROPE_LEVELS, ...NA_LEVELS];
 
 export function levelsForRegion(region: RinkStandard): LevelDef[] {
-  return region === 'europa' ? EUROPE_LEVELS : NA_LEVELS;
+  // The parking minigame is shown after each region's ladder
+  return [...(region === 'europa' ? EUROPE_LEVELS : NA_LEVELS), PARKING_LEVEL];
 }
 
 export function levelById(id: string): LevelDef {
+  if (id === PARKING_LEVEL.id) return PARKING_LEVEL;
   return ALL_LEVELS.find((l) => l.id === id) ?? EUROPE_LEVELS[0];
 }
 
@@ -113,6 +135,7 @@ export function saveStars(levelId: string, stars: number): void {
  *  stars). The bonus arena (the nationals showpiece) needs 2 stars on every
  *  regular level in the region. */
 export function isUnlocked(level: LevelDef, stars: Record<string, number>): boolean {
+  if (level.parking) return true; // the minigame is always open
   const ladder = levelsForRegion(level.region);
   if (level.bonus) {
     return ladder.filter((l) => !l.bonus).every((l) => (stars[l.id] ?? 0) >= 2);
