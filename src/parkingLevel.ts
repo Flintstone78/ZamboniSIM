@@ -4,10 +4,9 @@ import {
   LOT_DEPTH,
   STALL_WIDTH,
   STALL_DEPTH,
-  LANE_HALF,
   SWATH_REAR_OFFSET,
   PARK_TIME_LIMIT,
-  CAR_WARN_TIME,
+  CAR_APPROACH_SPEED,
   CAR_PARK_TIME,
   CAR_SPAWN_FIRST,
   CAR_SPAWN_INTERVAL,
@@ -33,12 +32,15 @@ type StallState = 'empty' | 'incoming' | 'snowed' | 'occupied';
 interface StallRuntime {
   stall: Stall;
   state: StallState;
-  warn: number;
-  parking: number;
+  phase: 'approach' | 'park'; // sub-phase while a car is incoming
+  parkT: number; // 0..1 turn-in progress during 'park'
+  approachHeading: number; // car's facing while driving the lane
   car: THREE.Group | null;
   indicator: THREE.Mesh | null;
-  spawnZ: number;
 }
+
+// Cars enter from the +X end of the central lane and drive in
+const LANE_ENTRANCE_X = LOT_WIDTH / 2 - 1.5;
 
 export interface ParkingResult {
   title: string;
@@ -80,12 +82,12 @@ export class Parking {
     this.group.add(this.dynamic);
     this.stalls = stalls.map((stall) => ({
       stall,
-      state: 'empty',
-      warn: 0,
-      parking: 0,
+      state: 'empty' as StallState,
+      phase: 'approach' as 'approach' | 'park',
+      parkT: 0,
+      approachHeading: -Math.PI / 2,
       car: null,
       indicator: null,
-      spawnZ: Math.sign(stall.cz) * (LANE_HALF - 0.5),
     }));
   }
 
@@ -109,8 +111,8 @@ export class Parking {
     this.dynamic.clear();
     for (const r of this.stalls) {
       r.state = 'empty';
-      r.warn = 0;
-      r.parking = 0;
+      r.phase = 'approach';
+      r.parkT = 0;
       r.car = null;
       r.indicator = null;
     }
@@ -134,18 +136,32 @@ export class Parking {
     }
 
     for (const r of this.stalls) {
-      if (r.state === 'incoming') {
-        if (r.warn > 0) {
-          r.warn -= dt;
-          if (r.indicator) {
-            const on = Math.floor(this.blinkClock * 6) % 2 === 0;
-            (r.indicator.material as THREE.MeshStandardMaterial).opacity = on ? 0.75 : 0.25;
+      if (r.state === 'incoming' && r.car) {
+        // The target stall blinks red the whole time the car is on its way in
+        if (r.indicator) {
+          const on = Math.floor(this.blinkClock * 6) % 2 === 0;
+          (r.indicator.material as THREE.MeshStandardMaterial).opacity = on ? 0.8 : 0.25;
+        }
+        if (r.phase === 'approach') {
+          // Drive along the lane (z ≈ 0) toward the stall's x
+          const dx = r.stall.cx - r.car.position.x;
+          const step = CAR_APPROACH_SPEED * dt;
+          r.approachHeading = dx < 0 ? -Math.PI / 2 : Math.PI / 2;
+          r.car.rotation.y = r.approachHeading;
+          if (Math.abs(dx) <= step) {
+            r.car.position.x = r.stall.cx;
+            r.phase = 'park';
+            r.parkT = 0;
+          } else {
+            r.car.position.x += Math.sign(dx) * step;
           }
         } else {
-          r.parking += dt;
-          const t = Math.min(1, r.parking / CAR_PARK_TIME);
-          if (r.car) r.car.position.z = THREE.MathUtils.lerp(r.spawnZ, r.stall.cz, t);
-          if (t >= 1) this.completePark(r);
+          // Turn and pull into the stall
+          r.parkT = Math.min(1, r.parkT + dt / CAR_PARK_TIME);
+          r.car.position.z = THREE.MathUtils.lerp(0, r.stall.cz, r.parkT);
+          const parkHeading = r.stall.cz > 0 ? 0 : Math.PI; // nose into the stall
+          r.car.rotation.y = THREE.MathUtils.lerp(r.approachHeading, parkHeading, r.parkT);
+          if (r.parkT >= 1) this.completePark(r);
         }
       }
 
@@ -173,12 +189,13 @@ export class Parking {
     if (free.length === 0) return;
     const r = free[(Math.random() * free.length) | 0];
     r.state = 'incoming';
-    r.warn = CAR_WARN_TIME;
-    r.parking = 0;
+    r.phase = 'approach';
+    r.parkT = 0;
+    r.approachHeading = -Math.PI / 2;
 
     const car = createCar();
-    car.position.set(r.stall.cx, 0, r.spawnZ);
-    car.rotation.y = r.stall.cz > 0 ? 0 : Math.PI;
+    car.position.set(LANE_ENTRANCE_X, 0, 0); // drive in from the lane entrance
+    car.rotation.y = r.approachHeading;
     r.car = car;
     this.dynamic.add(car);
 
