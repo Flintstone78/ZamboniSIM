@@ -682,6 +682,10 @@ export class Game {
     const fwd = this.vehicle.forward;
     const pos = this.vehicle.position;
 
+    // The seated driver would fill the lower frame in first-person, so hide
+    // it whenever we're looking out through his eyes.
+    this.zamboni.driver.visible = this.cameraMode !== 'fpv';
+
     if (this.cameraMode === 'top') {
       // Overview from above (the parking lot has its own framing)
       if (this.mode === 'parking' && this.parking) {

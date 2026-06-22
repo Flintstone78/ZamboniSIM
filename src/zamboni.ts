@@ -10,6 +10,8 @@ export interface ZamboniRig {
   group: THREE.Group;
   /** The conditioner housing dragged behind – animated up/down with Space. */
   blade: THREE.Mesh;
+  /** The seated driver figure (hidden in first-person view). */
+  driver: THREE.Object3D;
 }
 
 const BLADE_DOWN_Y = 0.1;
@@ -20,6 +22,38 @@ export function animateBlade(blade: THREE.Mesh, down: boolean, dt: number): void
   const target = down ? BLADE_DOWN_Y : BLADE_UP_Y;
   blade.position.y += (target - blade.position.y) * Math.min(1, dt * 8);
   blade.rotation.x = ((blade.position.y - BLADE_DOWN_Y) / (BLADE_UP_Y - BLADE_DOWN_Y)) * 0.35;
+}
+
+/** A seated hi-vis driver, facing local +Z (origin at the seat). */
+function buildDriver(): THREE.Group {
+  const d = new THREE.Group();
+  const hivis = new THREE.MeshStandardMaterial({ color: '#ff7a18', roughness: 0.6 });
+  const pants = new THREE.MeshStandardMaterial({ color: '#1c2330', roughness: 0.8 });
+  const skin = new THREE.MeshStandardMaterial({ color: '#e8b98c', roughness: 0.85 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#15181f', roughness: 0.7 });
+  const part = (
+    geo: THREE.BufferGeometry,
+    mat: THREE.Material,
+    x: number, y: number, z: number,
+    rx = 0,
+  ): void => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.x = rx;
+    m.castShadow = true;
+    d.add(m);
+  };
+  // Thighs forward, shins down (seated)
+  part(new THREE.BoxGeometry(0.42, 0.16, 0.46), pants, 0, 0, 0.2);
+  for (const sx of [-0.12, 0.12]) part(new THREE.CapsuleGeometry(0.07, 0.34, 4, 8), pants, sx, -0.26, 0.4);
+  // Torso (hi-vis), slight forward lean
+  part(new THREE.CapsuleGeometry(0.2, 0.36, 4, 10), hivis, 0, 0.46, 0.03, 0.16);
+  // Arms reaching forward to the wheel
+  for (const sx of [-0.19, 0.19]) part(new THREE.CapsuleGeometry(0.06, 0.34, 4, 8), hivis, sx, 0.52, 0.28, 1.15);
+  // Head + dark beanie
+  part(new THREE.SphereGeometry(0.13, 12, 12), skin, 0, 0.95, 0.05);
+  part(new THREE.SphereGeometry(0.145, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), dark, 0, 0.98, 0.04);
+  return d;
 }
 
 /**
@@ -41,6 +75,11 @@ export function createZamboni(): ZamboniRig {
   blade.position.set(0, BLADE_UP_Y, -ZAM_LENGTH / 2 + 0.1);
   blade.castShadow = true;
   group.add(blade);
+
+  // Driver in the rear seat (lives on `group` so it survives the GLB swap)
+  const driver = buildDriver();
+  driver.position.set(-0.28, 1.46, -1.4);
+  group.add(driver);
 
   loadModelInto('/assets/zamboni.glb', (model) => {
     model.traverse((o) => {
@@ -142,5 +181,5 @@ export function createZamboni(): ZamboniRig {
   box(0.18, 0.12, 0.05, -W / 2 + 0.25, 0.85, L / 2 + 0.01, lampMat);
   box(0.18, 0.12, 0.05, W / 2 - 0.25, 0.85, L / 2 + 0.01, lampMat);
 
-  return { group, blade };
+  return { group, blade, driver };
 }
