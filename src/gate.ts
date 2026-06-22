@@ -2,18 +2,11 @@ import * as THREE from 'three';
 import {
   RINK_WIDTH,
   BOARD_HEIGHT,
-  GLASS_HEIGHT,
   GATE_X_MIN,
   GATE_X_MAX,
   GARAGE_DEPTH,
 } from './constants';
 import { rinkSignedDistance } from './rink';
-
-// The tunnel is sized to the board+glass opening so it reads as a clean portal
-// from the rink, not an oversized garage box poking through the stands.
-const TUNNEL_H = BOARD_HEIGHT + GLASS_HEIGHT;
-const DOOR_TRAVEL = 2.4;
-const DOOR_SPEED = 2.4; // metres per second (open in ~1s)
 
 /** Rectangle SDF for the garage corridor (negative inside). */
 function rectSignedDistance(
@@ -39,9 +32,6 @@ function rectSignedDistance(
  */
 export class Gate {
   readonly group = new THREE.Group();
-  private door: THREE.Group;
-  private doorOpen = 0; // 0 = closed, 1 = fully open
-  private opening = false;
 
   /** Inner face of the -Z boards for the current rink width. */
   private readonly boardZ = -RINK_WIDTH / 2;
@@ -68,106 +58,60 @@ export class Gate {
     const cx = this.gateCenterX;
     const cz = (this.boardZ + this.corridorZMin) / 2;
 
-    // Corridor floor (matches the opening width)
+    // An OPEN bay – no roof, no door, only knee-high curbs – so from the start
+    // the driver sees straight onto the ice and knows to drive out.
+    const CURB_H = 0.85;
+
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(width + 0.3, GARAGE_DEPTH), concrete);
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(cx, -0.01, cz);
     floor.receiveShadow = true;
     this.group.add(floor);
 
-    // Clean rectangular tunnel flush with the opening: two side walls at the
-    // jamb lines, a ceiling at the glass top, and a back wall.
     for (const side of [-1, 1] as const) {
-      const wall = new THREE.Mesh(
-        new THREE.BoxGeometry(0.2, TUNNEL_H, GARAGE_DEPTH),
-        wallMat,
-      );
-      wall.position.set(cx + side * (width / 2 + 0.1), TUNNEL_H / 2, cz);
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.2, CURB_H, GARAGE_DEPTH), wallMat);
+      wall.position.set(cx + side * (width / 2 + 0.1), CURB_H / 2, cz);
       this.group.add(wall);
     }
-    const back = new THREE.Mesh(
-      new THREE.BoxGeometry(width + 0.4, TUNNEL_H, 0.3),
-      wallMat,
-    );
-    back.position.set(cx, TUNNEL_H / 2, this.corridorZMin - 0.15);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(width + 0.4, CURB_H, 0.3), wallMat);
+    back.position.set(cx, CURB_H / 2, this.corridorZMin - 0.15);
     this.group.add(back);
-    const roof = new THREE.Mesh(
-      new THREE.BoxGeometry(width + 0.4, 0.22, GARAGE_DEPTH),
-      wallMat,
-    );
-    roof.position.set(cx, TUNNEL_H, cz);
-    this.group.add(roof);
 
-    // Cold strip lights in the tunnel ceiling
-    const lampMat = new THREE.MeshStandardMaterial({
-      color: '#fff',
-      emissive: '#eaf4ff',
-      emissiveIntensity: 2,
-    });
-    for (const lz of [this.boardZ - 2.5, this.boardZ - 6.5]) {
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 1.6), lampMat);
-      lamp.position.set(cx, TUNNEL_H - 0.16, lz);
+    // Two floodlight poles light the open bay (no ceiling)
+    const poleMat = new THREE.MeshStandardMaterial({ color: '#2b2f36', roughness: 0.6, metalness: 0.4 });
+    const lampMat = new THREE.MeshStandardMaterial({ color: '#fff7e0', emissive: '#ffe8a8', emissiveIntensity: 2.2 });
+    for (const side of [-1, 1] as const) {
+      const px = cx + side * (width / 2 + 0.7);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 4.2), poleMat);
+      pole.position.set(px, 2.1, this.corridorZMin + 1);
+      this.group.add(pole);
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.25, 0.6), lampMat);
+      lamp.position.set(px - side * 0.3, 4.2, this.corridorZMin + 1.4);
       this.group.add(lamp);
+      const light = new THREE.PointLight('#ffe9b8', 30, 26, 2);
+      light.position.set(px, 4, this.corridorZMin + 1.4);
+      this.group.add(light);
     }
 
-    // The sliding door itself: board-white with a yellow kick stripe
-    const door = new THREE.Group();
-    const panel = new THREE.Mesh(
-      new THREE.BoxGeometry(width, BOARD_HEIGHT + 0.5, 0.14),
-      new THREE.MeshStandardMaterial({ color: '#f5f5f5', roughness: 0.55 }),
-    );
-    panel.position.y = (BOARD_HEIGHT + 0.5) / 2;
-    door.add(panel);
-    const stripe = new THREE.Mesh(
-      new THREE.BoxGeometry(width, 0.2, 0.16),
-      new THREE.MeshStandardMaterial({ color: '#f2c40f', roughness: 0.6 }),
-    );
-    stripe.position.y = 0.1;
-    door.add(stripe);
-    door.position.set(cx, 0, this.boardZ - 0.07);
-    this.door = door;
-    this.group.add(door);
-
-    // The gate stands open for the whole resurfacing: the door starts rolled
-    // fully up and out of sight, so there's never a closed/hovering panel.
-    this.doorOpen = 1;
-    this.opening = true;
-    this.door.position.y = DOOR_TRAVEL;
-    this.door.visible = false;
-
-    // White jamb posts framing the opening up to the glass top
+    // Tidy board-height caps closing the cut ends of the rink boards
     const edgeMat = new THREE.MeshStandardMaterial({ color: '#e8e8e8', roughness: 0.6 });
     for (const x of [GATE_X_MIN, GATE_X_MAX]) {
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.1, TUNNEL_H, 0.3), edgeMat);
-      cap.position.set(x, TUNNEL_H / 2, this.boardZ);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.1, BOARD_HEIGHT, 0.3), edgeMat);
+      cap.position.set(x, BOARD_HEIGHT / 2, this.boardZ);
       this.group.add(cap);
     }
-    // Red lintel across the top, matching the board cap
-    const lintel = new THREE.Mesh(
-      new THREE.BoxGeometry(width + 0.3, 0.12, 0.32),
-      new THREE.MeshStandardMaterial({ color: '#b71c1c', roughness: 0.45 }),
-    );
-    lintel.position.set(cx, TUNNEL_H, this.boardZ);
-    this.group.add(lintel);
+
   }
 
-  /** Start the door animation (called when a level begins). */
-  open(): void {
-    this.opening = true;
-  }
+  /** No-op: the bay is always open. */
+  open(): void {}
 
   get isOpen(): boolean {
-    return this.doorOpen >= 0.95;
+    return true;
   }
 
-  update(dt: number): void {
-    if (this.opening && this.doorOpen < 1) {
-      this.doorOpen = Math.min(1, this.doorOpen + (dt * DOOR_SPEED) / DOOR_TRAVEL);
-      this.door.position.y = this.doorOpen * DOOR_TRAVEL;
-    }
-    // Hide the door once it's fully up – it's tucked away, gate open
-    this.door.visible = this.doorOpen < 0.99;
-  }
+  /** The bay is always open; nothing to animate. */
+  update(_dt: number): void {}
 
   /**
    * Signed distance to the drivable boundary: the rink joined with the

@@ -138,7 +138,8 @@ export function isUnlocked(level: LevelDef, stars: Record<string, number>): bool
   if (level.parking) return true; // the minigame is always open
   const ladder = levelsForRegion(level.region);
   if (level.bonus) {
-    return ladder.filter((l) => !l.bonus).every((l) => (stars[l.id] ?? 0) >= 2);
+    // 2 stars on every regular rink level (the parking minigame doesn't count)
+    return ladder.filter((l) => !l.bonus && !l.parking).every((l) => (stars[l.id] ?? 0) >= 2);
   }
   const i = ladder.findIndex((l) => l.id === level.id);
   if (i <= 0) return true;
