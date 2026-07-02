@@ -91,8 +91,9 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
   loadTextureInto('/assets/crowd.png', (tex) => {
     tex.wrapS = THREE.RepeatWrapping;
     for (const mat of crowdMats) {
+      // Own texture per block (the wave animates offset per material); the
+      // tiling itself is baked into each block's UVs in deck metres
       const own = tex.clone();
-      own.repeat.set(mat.userData.repeatX, 1);
       own.needsUpdate = true;
       mat.map = own;
       mat.visible = true;
@@ -121,22 +122,26 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
     ]);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2));
+    // Continuous metre-based U along the whole deck so every block samples the
+    // crowd at the same density and lines up seamlessly across the aisles
+    const slope = Math.hypot(farOff - nearOff, yFar - yNear);
+    const uPerMetre = 1 / (slope * (16 / 9)); // crowd.png is a 16:9 panorama
+    const u0 = (xCenter - half) * uPerMetre;
+    const u1 = (xCenter + half) * uPerMetre;
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute([u0, 0, u1, 0, u0, 1, u1, 1], 2));
     geo.setIndex([0, 1, 2, 1, 3, 2]);
     geo.computeVertexNormals();
-    const slope = Math.hypot(farOff - nearOff, yFar - yNear);
     const mat = new THREE.MeshStandardMaterial({
       roughness: 0.95,
       visible: false,
       side: THREE.DoubleSide,
     });
-    mat.userData.repeatX = Math.max(1, Math.round(length / (slope * (16 / 9))));
     crowdMats.push(mat);
     group.add(new THREE.Mesh(geo, mat));
   };
 
   // Aisle stairs: a concrete strip climbing the deck between crowd segments
-  const aisleMat = new THREE.MeshStandardMaterial({ color: '#6b7480', roughness: 0.92 });
+  const aisleMat = new THREE.MeshStandardMaterial({ color: '#4e565f', roughness: 0.92 });
 
   // One deck of stepped rows + its crowd plane. `gap` (an x-range, long sides
   // only) punches a vomitory tunnel through the rows for the zamboni gate.
@@ -179,7 +184,7 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
     const far = offset + (rows - 1) * TIER_DEPTH + TIER_DEPTH / 2;
     const yNear = baseY + TIER_HEIGHT + 0.08;
     const yFar = baseY + rows * TIER_HEIGHT + 0.08;
-    const AISLE_W = 1.1;
+    const AISLE_W = 0.95;
     for (const [a, b] of spans) {
       if (b - a < 0.5) continue;
       // Aisle positions inside this span; crowd fills the blocks between them
@@ -315,7 +320,6 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
     });
     loadTextureInto('/assets/board_ads.png', (tex) => {
       tex.wrapS = THREE.RepeatWrapping;
-      tex.repeat.set(8, 1);
       ribbonMat.map = tex;
       ribbonMat.emissiveMap = tex;
       ribbonMat.color.set('#ffffff');
@@ -325,6 +329,10 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
     const y = spec.rows * TIER_HEIGHT + 0.5;
     const ring = (len: number, alongX: boolean, off: number) => {
       const geo = new THREE.PlaneGeometry(len, 0.7);
+      // One ad strip per ~8.5 m regardless of ring length (baked into UVs so
+      // the long and short sides can share the material without stretching)
+      const uv = geo.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * (len / 8.5));
       for (const side of [1, -1] as const) {
         const m = new THREE.Mesh(geo, ribbonMat);
         if (alongX) {

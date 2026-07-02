@@ -20,11 +20,18 @@ export function loadTextureInto(
   apply: (texture: THREE.Texture) => void,
 ): void {
   const resolved = assetUrl(url);
+  // Every caller gets its OWN texture (they set wrap/repeat freely) sharing
+  // the cached image – one decode per asset, no cross-consumer clobbering.
+  const deliver = (pristine: THREE.Texture): void => {
+    const own = pristine.clone();
+    own.needsUpdate = true;
+    apply(own);
+  };
   const cached = textureCache.get(resolved);
   if (cached) {
     // Deliver async like the network path: callers (e.g. the arena's crowd
     // fade-in) register their materials after this call returns
-    queueMicrotask(() => apply(cached));
+    queueMicrotask(() => deliver(cached));
     return;
   }
   new THREE.TextureLoader().load(
@@ -33,7 +40,7 @@ export function loadTextureInto(
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 8;
       textureCache.set(resolved, tex);
-      apply(tex);
+      deliver(tex);
     },
     undefined,
     () => {
