@@ -11,17 +11,76 @@ const SKATER_HEIGHT = 1.85; // metres, for normalising the GLB
 const MODEL_YAW = Math.PI; // align the model's facing with travel (+Z)
 const JERSEYS = ['#d32f2f', '#1565c0', '#2e7d32', '#f9a825', '#6a1b9a', '#00838f'];
 
-/** A blocky-but-readable hockey player: helmet, jersey, pants, socks, skates,
- *  arms and a stick, posed mid-stride leaning forward (forward = +Z). */
-function buildSkaterFigure(jerseyHex: string): THREE.Group {
+interface SkaterRig {
+  fig: THREE.Group;
+  /** Hip pivots – swung back/forth for the skating stride. */
+  hips: [THREE.Group, THREE.Group];
+  torso: THREE.Group;
+}
+
+/** Jersey texture: team colour with hem stripes, shoulder yoke, a chest crest
+ *  and a big back number – wrapped around the torso cylinder. */
+function jerseyTexture(jerseyHex: string, num: number): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = jerseyHex;
+  ctx.fillRect(0, 0, 256, 256);
+  // Darker shoulder yoke
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(0, 0, 256, 34);
+  // Hem stripes
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillRect(0, 196, 256, 22);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 222, 256, 10);
+  // Back number (u≈0.75) and a simple chest crest (u≈0.25)
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 5;
+  ctx.font = '900 92px "Arial Black", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeText(String(num), 192, 96);
+  ctx.fillText(String(num), 192, 96);
+  ctx.save();
+  ctx.translate(64, 100);
+  ctx.rotate(Math.PI / 4);
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillRect(-26, -26, 52, 52);
+  ctx.fillStyle = jerseyHex;
+  ctx.fillRect(-16, -16, 32, 32);
+  ctx.restore();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * A properly kitted hockey player facing +Z: textured jersey with back number,
+ * shoulder/elbow bulk, breezers with side stripes, striped socks, helmet with
+ * visor, and both gloves on a diagonal stick. The hip pivots are returned so
+ * the legs can swing in a skating stride while moving.
+ */
+function buildSkaterFigure(jerseyHex: string, num: number): SkaterRig {
   const fig = new THREE.Group();
-  const jersey = new THREE.MeshStandardMaterial({ color: jerseyHex, roughness: 0.7 });
-  const pants = new THREE.MeshStandardMaterial({ color: '#1a1f2b', roughness: 0.8 });
-  const sock = new THREE.MeshStandardMaterial({ color: jerseyHex, roughness: 0.85 });
+  const jersey = new THREE.MeshStandardMaterial({ color: jerseyHex, roughness: 0.75 });
+  const jerseyTex = new THREE.MeshStandardMaterial({
+    map: jerseyTexture(jerseyHex, num),
+    roughness: 0.75,
+  });
+  const white = new THREE.MeshStandardMaterial({ color: '#f4f4f4', roughness: 0.8 });
+  const pants = new THREE.MeshStandardMaterial({ color: '#161b26', roughness: 0.85 });
   const skin = new THREE.MeshStandardMaterial({ color: '#e8b98c', roughness: 0.8 });
   const dark = new THREE.MeshStandardMaterial({ color: '#15181f', roughness: 0.6 });
+  const steel = new THREE.MeshStandardMaterial({ color: '#cfd6dd', roughness: 0.3, metalness: 0.7 });
+  const visorMat = new THREE.MeshPhysicalMaterial({
+    color: '#2a3340', roughness: 0.1, transparent: true, opacity: 0.55,
+  });
 
   const part = (
+    parent: THREE.Object3D,
     geo: THREE.BufferGeometry,
     mat: THREE.Material,
     x: number, y: number, z: number,
@@ -31,51 +90,85 @@ function buildSkaterFigure(jerseyHex: string): THREE.Group {
     m.position.set(x, y, z);
     m.rotation.set(rx, ry, rz);
     m.castShadow = true;
-    fig.add(m);
+    parent.add(m);
     return m;
   };
 
-  // Legs in a stride: one trailing (-z), one leading (+z), with socks + skates
-  const legGeo = new THREE.CapsuleGeometry(0.11, 0.55, 3, 8);
-  const skateBoot = new THREE.BoxGeometry(0.16, 0.16, 0.34);
-  const blade = new THREE.BoxGeometry(0.03, 0.06, 0.36);
-  for (const dir of [-1, 1] as const) {
-    const lx = dir * 0.14;
-    part(legGeo, sock, lx, 0.5, dir * 0.18, dir * 0.32);
-    part(skateBoot, dark, lx, 0.13, dir * 0.42);
-    part(blade, dark, lx, 0.02, dir * 0.42);
+  // --- Legs: hip pivot → bent thigh → shin (sock) → skate. Swinging the hip
+  // pivot animates a stride with the knee bend preserved.
+  const hips: THREE.Group[] = [];
+  for (const side of [-1, 1] as const) {
+    const hip = new THREE.Group();
+    hip.position.set(side * 0.16, 0.98, 0);
+    part(hip, new THREE.CapsuleGeometry(0.115, 0.34, 3, 8), pants, 0, -0.2, 0.09, 0.5); // thigh
+    part(hip, new THREE.CapsuleGeometry(0.1, 0.36, 3, 8), jersey, 0, -0.58, 0.1, -0.25); // shin/sock
+    part(hip, new THREE.CylinderGeometry(0.105, 0.105, 0.09, 10), white, 0, -0.5, 0.12, -0.25); // sock stripe
+    part(hip, new THREE.BoxGeometry(0.15, 0.17, 0.36), dark, 0, -0.85, 0.06); // boot
+    part(hip, new THREE.BoxGeometry(0.025, 0.07, 0.34), steel, 0, -0.95, 0.06); // blade
+    fig.add(hip);
+    hips.push(hip);
   }
 
-  // Hips / breezers
-  part(new THREE.BoxGeometry(0.46, 0.3, 0.5), pants, 0, 0.92, 0.02);
+  // --- Hips/breezers with team-colour side stripes
+  part(fig, new THREE.BoxGeometry(0.48, 0.32, 0.46), pants, 0, 1.08, 0.02);
+  for (const side of [-1, 1] as const) {
+    part(fig, new THREE.BoxGeometry(0.02, 0.3, 0.4), jersey, side * 0.25, 1.08, 0.02);
+  }
 
-  // Torso (jersey), hunched forward a touch
-  part(new THREE.CapsuleGeometry(0.27, 0.5, 4, 10), jersey, 0, 1.28, 0.04, 0.25);
+  // --- Torso: textured jersey cylinder (number on the back), padded shoulders
+  const torso = new THREE.Group();
+  torso.position.set(0, 1.42, 0.02);
+  torso.rotation.x = 0.2; // forward lean
+  const chest = part(torso, new THREE.CylinderGeometry(0.245, 0.31, 0.62, 14), jerseyTex, 0, 0, 0);
+  chest.rotation.y = Math.PI / 2; // crest to the chest (+Z), number to the back
+  const dome = part(torso, new THREE.SphereGeometry(0.26, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), jersey, 0, 0.26, 0);
+  dome.scale.y = 0.55; // flat shoulder-pad dome that stays below the chin
 
-  // Shoulders + arms, the lead arm reaching forward to the stick
-  part(new THREE.BoxGeometry(0.62, 0.2, 0.34), jersey, 0, 1.5, 0.06);
-  const armGeo = new THREE.CapsuleGeometry(0.08, 0.42, 3, 8);
-  part(armGeo, jersey, -0.34, 1.32, 0.16, 0.7); // trailing arm
-  part(armGeo, jersey, 0.34, 1.28, 0.34, 1.0); // lead arm forward
-  const gloveGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
-  part(gloveGeo, dark, -0.36, 1.06, 0.34);
-  part(gloveGeo, dark, 0.38, 1.04, 0.62);
+  // Arms: both reaching forward-down to the stick, elbow pads at the joint
+  for (const side of [-1, 1] as const) {
+    const armLift = side > 0 ? 0.1 : 0;
+    part(torso, new THREE.CapsuleGeometry(0.085, 0.3, 3, 8), jersey, side * 0.32, 0.06 - armLift, 0.1, 1.0);
+    part(torso, new THREE.SphereGeometry(0.09, 8, 8), dark, side * 0.33, -0.08 - armLift, 0.22); // elbow
+    part(torso, new THREE.CapsuleGeometry(0.075, 0.26, 3, 8), jersey, side * 0.3, -0.2 - armLift, 0.36, 1.25);
+    part(torso, new THREE.CylinderGeometry(0.08, 0.08, 0.07, 10), white, side * 0.31, -0.13 - armLift, 0.29, 1.25); // cuff stripe
+  }
+  fig.add(torso);
 
-  // Neck + head + helmet
-  part(new THREE.SphereGeometry(0.15, 12, 12), skin, 0, 1.74, 0.08);
-  part(new THREE.SphereGeometry(0.17, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), jersey, 0, 1.78, 0.07);
+  // Gloves on the stick (team colour, dark cuffs)
+  const glove = (x: number, y: number, z: number): void => {
+    part(fig, new THREE.BoxGeometry(0.15, 0.13, 0.17), jersey, x, y, z);
+    part(fig, new THREE.BoxGeometry(0.16, 0.06, 0.1), dark, x, y + 0.07, z - 0.08);
+  };
+  glove(-0.28, 1.2, 0.42); // top hand
+  glove(0.22, 0.95, 0.62); // lower hand
 
-  // Stick: from the lead glove down and forward to the ice
-  const shaft = part(new THREE.BoxGeometry(0.04, 0.04, 1.5), dark, 0.4, 0.55, 1.0, 0.62);
+  // Stick: diagonal shaft meeting a taped blade on the ice
+  const stick = new THREE.Group();
+  const shaft = part(stick, new THREE.BoxGeometry(0.035, 0.035, 1.45), dark, 0, 0, 0);
   shaft.castShadow = false;
-  part(new THREE.BoxGeometry(0.05, 0.14, 0.34), dark, 0.4, 0.08, 1.66, 0.2);
+  stick.position.set(0.0, 0.64, 0.6);
+  stick.rotation.set(0.78, -0.1, 0.1);
+  fig.add(stick);
+  part(fig, new THREE.BoxGeometry(0.045, 0.11, 0.35), dark, 0.08, 0.05, 1.28, 0, -0.22);
 
-  return fig;
+  // --- Head: face + helmet shell + visor + chin strap
+  const head = new THREE.Group();
+  head.position.set(0, 1.86, 0.1);
+  part(head, new THREE.SphereGeometry(0.145, 14, 12), skin, 0, 0, 0.01);
+  part(head, new THREE.SphereGeometry(0.165, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.58), dark, 0, 0.03, -0.01);
+  part(head, new THREE.BoxGeometry(0.24, 0.09, 0.02), visorMat, 0, 0.02, 0.15, -0.15);
+  part(head, new THREE.BoxGeometry(0.02, 0.12, 0.02), dark, -0.13, -0.04, 0.08);
+  part(head, new THREE.BoxGeometry(0.02, 0.12, 0.02), dark, 0.13, -0.04, 0.08);
+  fig.add(head);
+
+  return { fig, hips: [hips[0], hips[1]] as [THREE.Group, THREE.Group], torso };
 }
 
 interface Skater {
   group: THREE.Group;
   lean: THREE.Object3D; // the figure root, tilted into turns
+  rig: SkaterRig | null; // hip pivots for the stride (null once a GLB loads)
+  phase: number; // stride phase
   pos: THREE.Vector2;
   vel: THREE.Vector2;
   target: THREE.Vector2;
@@ -101,12 +194,15 @@ export class Skaters {
       // Detailed procedural player (shown until the GLB model loads). Wrapped
       // in `lean` so the whole figure can tilt into turns.
       const lean = new THREE.Group();
-      lean.add(buildSkaterFigure(JERSEYS[i % JERSEYS.length]));
+      const rig = buildSkaterFigure(JERSEYS[i % JERSEYS.length], 4 + i * 13);
+      lean.add(rig.fig);
       g.add(lean);
       this.group.add(g);
       this.skaters.push({
         group: g,
         lean,
+        rig,
+        phase: i * 1.7, // desynchronised strides
         pos: new THREE.Vector2(),
         vel: new THREE.Vector2(),
         target: new THREE.Vector2(),
@@ -134,6 +230,7 @@ export class Skaters {
         const clone = model.clone(true);
         s.lean.clear();
         s.lean.add(clone);
+        s.rig = null; // the procedural stride rig is gone with the old figure
       }
     });
     this.reset();
@@ -240,6 +337,19 @@ export class Skaters {
       s.group.position.set(s.pos.x, 0, s.pos.y);
       if (s.vel.lengthSq() > 0.05) s.group.rotation.y = Math.atan2(s.vel.x, s.vel.y);
       s.lean.rotation.z = THREE.MathUtils.clamp(-s.vel.length() * 0.04, -0.3, 0.3);
+
+      // Skating stride: swing the hip pivots with speed, settle when gliding
+      if (s.rig) {
+        const speed = s.vel.length();
+        s.phase += dt * (2.2 + speed * 1.6);
+        const amp = Math.min(0.55, speed * 0.12);
+        const swing = Math.sin(s.phase) * amp;
+        s.rig.hips[0].rotation.x = swing;
+        s.rig.hips[1].rotation.x = -swing;
+        // A touch of counter-rotation and bob sells the push-off
+        s.rig.torso.rotation.y = Math.sin(s.phase) * amp * 0.18;
+        s.rig.fig.position.y = Math.abs(Math.cos(s.phase)) * amp * 0.05;
+      }
     }
     return impact;
   }

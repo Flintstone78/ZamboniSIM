@@ -24,35 +24,70 @@ export function animateBlade(blade: THREE.Mesh, down: boolean, dt: number): void
   blade.rotation.x = ((blade.position.y - BLADE_DOWN_Y) / (BLADE_UP_Y - BLADE_DOWN_Y)) * 0.35;
 }
 
-/** A seated hi-vis driver, facing local +Z (origin at the seat). */
+/** A seated driver in a proper hi-vis kit, facing local +Z (origin at the
+ *  seat): navy work jacket with a reflective vest, two-segment arms on the
+ *  wheel, gloves, a cap with a peak and boots on the platform. */
 function buildDriver(): THREE.Group {
   const d = new THREE.Group();
-  const hivis = new THREE.MeshStandardMaterial({ color: '#ff7a18', roughness: 0.6 });
-  const pants = new THREE.MeshStandardMaterial({ color: '#1c2330', roughness: 0.8 });
+  const hivis = new THREE.MeshStandardMaterial({
+    color: '#ffb300', emissive: '#4d3300', emissiveIntensity: 0.25, roughness: 0.55,
+  });
+  const reflect = new THREE.MeshStandardMaterial({
+    color: '#e9edf2', roughness: 0.25, metalness: 0.35,
+  });
+  const jacket = new THREE.MeshStandardMaterial({ color: '#20304a', roughness: 0.75 });
+  const pants = new THREE.MeshStandardMaterial({ color: '#1c2330', roughness: 0.85 });
   const skin = new THREE.MeshStandardMaterial({ color: '#e8b98c', roughness: 0.85 });
   const dark = new THREE.MeshStandardMaterial({ color: '#15181f', roughness: 0.7 });
   const part = (
     geo: THREE.BufferGeometry,
     mat: THREE.Material,
     x: number, y: number, z: number,
-    rx = 0,
-  ): void => {
+    rx = 0, rz = 0,
+  ): THREE.Mesh => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
-    m.rotation.x = rx;
+    m.rotation.set(rx, 0, rz);
     m.castShadow = true;
     d.add(m);
+    return m;
   };
-  // Thighs forward, shins down (seated)
-  part(new THREE.BoxGeometry(0.42, 0.16, 0.46), pants, 0, 0, 0.2);
-  for (const sx of [-0.12, 0.12]) part(new THREE.CapsuleGeometry(0.07, 0.34, 4, 8), pants, sx, -0.26, 0.4);
-  // Torso (hi-vis), slight forward lean
-  part(new THREE.CapsuleGeometry(0.2, 0.36, 4, 10), hivis, 0, 0.46, 0.03, 0.16);
-  // Arms reaching forward to the wheel
-  for (const sx of [-0.19, 0.19]) part(new THREE.CapsuleGeometry(0.06, 0.34, 4, 8), hivis, sx, 0.52, 0.28, 1.15);
-  // Head + dark beanie
-  part(new THREE.SphereGeometry(0.13, 12, 12), skin, 0, 0.95, 0.05);
-  part(new THREE.SphereGeometry(0.145, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), dark, 0, 0.98, 0.04);
+
+  // Seated legs: thighs forward, shins down, boots resting on the platform
+  part(new THREE.BoxGeometry(0.42, 0.18, 0.44), pants, 0, 0.02, 0.18);
+  for (const sx of [-0.12, 0.12] as const) {
+    part(new THREE.CapsuleGeometry(0.075, 0.3, 4, 8), pants, sx, -0.22, 0.38);
+    part(new THREE.BoxGeometry(0.14, 0.1, 0.26), dark, sx, -0.42, 0.44);
+  }
+
+  // Torso: jacket with a hi-vis vest over it, two reflective stripes + straps
+  part(new THREE.CapsuleGeometry(0.21, 0.34, 4, 10), jacket, 0, 0.44, 0.02, 0.14);
+  const vest = part(new THREE.CylinderGeometry(0.215, 0.245, 0.34, 12), hivis, 0, 0.42, 0.03, 0.14);
+  vest.scale.z = 0.82;
+  for (const vy of [0.32, 0.5] as const) {
+    const stripe = part(new THREE.CylinderGeometry(0.222, 0.235, 0.045, 12), reflect, 0, vy, 0.035, 0.14);
+    stripe.scale.z = 0.82;
+  }
+  for (const sx of [-0.1, 0.1] as const) {
+    part(new THREE.BoxGeometry(0.055, 0.2, 0.02), hivis, sx, 0.62, 0.21, 0.3);
+  }
+
+  // Arms: upper arm down-forward from the shoulder, forearm to the wheel,
+  // dark work gloves at the grip
+  for (const sx of [-0.2, 0.2] as const) {
+    part(new THREE.CapsuleGeometry(0.065, 0.22, 4, 8), jacket, sx, 0.52, 0.16, 0.85, sx > 0 ? -0.15 : 0.15);
+    part(new THREE.CapsuleGeometry(0.055, 0.2, 4, 8), jacket, sx * 0.8, 0.38, 0.36, 1.35);
+    part(new THREE.BoxGeometry(0.11, 0.09, 0.12), dark, sx * 0.72, 0.34, 0.5);
+  }
+
+  // Head: face, cap with a peak, ear flaps for the cold hall
+  part(new THREE.SphereGeometry(0.13, 14, 12), skin, 0, 0.92, 0.05);
+  part(new THREE.SphereGeometry(0.142, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), jacket, 0, 0.96, 0.04);
+  part(new THREE.BoxGeometry(0.2, 0.025, 0.12), jacket, 0, 0.98, 0.17, -0.1);
+  for (const sx of [-0.125, 0.125] as const) {
+    part(new THREE.BoxGeometry(0.03, 0.08, 0.09), jacket, sx, 0.88, 0.03);
+  }
+
   return d;
 }
 
