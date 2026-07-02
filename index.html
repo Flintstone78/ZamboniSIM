@@ -253,6 +253,50 @@
         border: 0; border-radius: 8px; padding: 12px 30px;
       }
       #finish-overlay button:hover { filter: brightness(1.1); }
+
+      /* Touch controls (only injected on coarse-pointer devices) */
+      #touch-controls {
+        position: fixed; inset: 0; pointer-events: none; z-index: 40;
+      }
+      .touch-pad {
+        pointer-events: auto; touch-action: none;
+        position: absolute; left: 16px; bottom: 18px;
+        width: 190px; height: 74px; border-radius: 37px;
+        background: rgba(10, 22, 36, 0.45);
+        border: 1px solid rgba(159, 208, 255, 0.35);
+        display: flex; align-items: center; justify-content: center;
+      }
+      .touch-knob {
+        width: 54px; height: 54px; border-radius: 50%;
+        background: rgba(79, 195, 247, 0.55);
+        border: 2px solid rgba(207, 232, 255, 0.7);
+        transition: transform 0.04s linear;
+      }
+      .touch-buttons {
+        pointer-events: auto; touch-action: none;
+        position: absolute; right: 14px; bottom: 16px;
+        display: grid; grid-template-columns: auto auto; gap: 10px;
+        align-items: end;
+      }
+      .touch-btn {
+        pointer-events: auto; touch-action: none; user-select: none;
+        -webkit-user-select: none; cursor: pointer;
+        font: inherit; font-weight: 800; font-size: 15px;
+        color: #dff0ff; background: rgba(10, 22, 36, 0.5);
+        border: 1px solid rgba(159, 208, 255, 0.4);
+        border-radius: 50%; width: 72px; height: 72px;
+      }
+      .touch-btn.gas { width: 86px; height: 86px; background: rgba(27, 94, 32, 0.55); }
+      .touch-btn.rev { font-size: 22px; }
+      .touch-btn.turbo { font-size: 24px; background: rgba(191, 129, 10, 0.5); }
+      .touch-btn.blade { font-size: 12.5px; background: rgba(21, 60, 96, 0.6); }
+      .touch-btn.held { filter: brightness(1.5); transform: scale(0.94); }
+      /* Lift the bottom-left HUD clear of the steering pad in touch mode,
+         and drop the keyboard help line entirely */
+      body.touch-mode #hud-speed { bottom: 108px; }
+      body.touch-mode #blade-indicator { bottom: 156px; }
+      body.touch-mode #boost { bottom: 204px; }
+      body.touch-mode #hud-help { display: none; }
     </style>
   </head>
   <body>

@@ -28,9 +28,14 @@ export class AudioEngine {
   private engineOsc2!: OscillatorNode;
   private engineFilter!: BiquadFilterNode;
   private engineGain!: GainNode;
+  private engineLfo!: OscillatorNode;
   private scrapeGain!: GainNode;
+  private scrapeHissGain!: GainNode;
   private crowdGain!: GainNode;
   private crowdFilter!: BiquadFilterNode;
+  private crowdVoicesGain!: GainNode;
+  private crowdLevel = 0; // last intensity from setCrowd – gates the whistles
+  private whistleTimer = 6;
   private muted = localStorage.getItem('zambonisim.muted') === '1';
   private heckleVoice: SpeechSynthesisVoice | null = null;
 
@@ -68,7 +73,7 @@ export class AudioEngine {
   }
 
   /** Per-frame: engine pitch/volume follow speed, scrape follows the blade. */
-  update(speed: number, throttle: number, scraping: boolean): void {
+  update(speed: number, throttle: number, scraping: boolean, dt = 1 / 60): void {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
     const t = ctx.currentTime;
@@ -77,6 +82,8 @@ export class AudioEngine {
     this.engineOsc.frequency.setTargetAtTime(rpm, t, 0.12);
     this.engineOsc2.frequency.setTargetAtTime(rpm * 1.5, t, 0.12);
     this.engineFilter.frequency.setTargetAtTime(260 + s * 50, t, 0.12);
+    // Diesel chug: the idle wobble slows/steadies as the revs climb
+    this.engineLfo.frequency.setTargetAtTime(7 + s * 1.6, t, 0.2);
     this.engineGain.gain.setTargetAtTime(
       0.05 + s * 0.008 + Math.abs(throttle) * 0.015,
       t,
@@ -87,15 +94,51 @@ export class AudioEngine {
       t,
       0.08,
     );
+    // Bright shaved-ice hiss rides on top of the scrape, keyed harder to speed
+    this.scrapeHissGain.gain.setTargetAtTime(
+      scraping ? Math.min(0.035, s * 0.007) : 0,
+      t,
+      0.08,
+    );
+
+    // The odd distant whistle once the crowd is into it
+    this.whistleTimer -= dt;
+    if (this.whistleTimer <= 0) {
+      this.whistleTimer = 5 + Math.random() * 9;
+      if (this.crowdLevel > 0.35 && !this.muted) this.whistle();
+    }
   }
 
   /** Swell the crowd murmur with progress/excitement (0..1). */
   setCrowd(intensity: number): void {
+    this.crowdLevel = intensity;
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.crowdGain) return;
     const t = ctx.currentTime;
     this.crowdGain.gain.setTargetAtTime(0.016 + intensity * 0.05, t, 0.4);
     this.crowdFilter.frequency.setTargetAtTime(420 + intensity * 900, t, 0.4);
+    // The "voices" band only comes up once the building is actually buzzing
+    this.crowdVoicesGain.gain.setTargetAtTime(intensity * 0.02, t, 0.5);
+  }
+
+  /** A single faraway fan whistle – two quick falling chirps. */
+  private whistle(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    for (const [start, f0] of [[0, 2350], [0.16, 2500]] as const) {
+      const t = ctx.currentTime + start;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f0, t);
+      osc.frequency.exponentialRampToValueAtTime(f0 * 0.78, t + 0.13);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.linearRampToValueAtTime(0.011, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0005, t + 0.15);
+      osc.connect(gain).connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.18);
+    }
   }
 
   /** A quick crowd cheer (combo milestone, net cleared, finish). */
@@ -281,8 +324,16 @@ export class AudioEngine {
     this.engineOsc2.connect(this.engineFilter);
     this.engineOsc.start();
     this.engineOsc2.start();
+    // Diesel chug: a slow LFO wobbling the engine volume
+    this.engineLfo = ctx.createOscillator();
+    this.engineLfo.frequency.value = 7;
+    const chugGain = ctx.createGain();
+    chugGain.gain.value = 0.014;
+    this.engineLfo.connect(chugGain).connect(this.engineGain.gain);
+    this.engineLfo.start();
 
-    // Blade scrape, opened by update() while laying clean ice
+    // Blade scrape, opened by update() while laying clean ice. Two layers:
+    // the mid-band grind plus a bright "shaved ice" hiss on top.
     const scrape = ctx.createBufferSource();
     scrape.buffer = this.noiseBuffer(ctx, 2);
     scrape.loop = true;
@@ -293,9 +344,16 @@ export class AudioEngine {
     this.scrapeGain = ctx.createGain();
     this.scrapeGain.gain.value = 0;
     scrape.connect(scrapeFilter).connect(this.scrapeGain).connect(this.master);
+    const hissFilter = ctx.createBiquadFilter();
+    hissFilter.type = 'highpass';
+    hissFilter.frequency.value = 2800;
+    this.scrapeHissGain = ctx.createGain();
+    this.scrapeHissGain.gain.value = 0;
+    scrape.connect(hissFilter).connect(this.scrapeHissGain).connect(this.master);
     scrape.start();
 
-    // Crowd murmur: heavily lowpassed noise with a slow LFO swell
+    // Crowd murmur: heavily lowpassed noise with a slow LFO swell, plus a
+    // mid "voices" band that only opens when the building is buzzing
     const crowd = ctx.createBufferSource();
     crowd.buffer = this.noiseBuffer(ctx, 4);
     crowd.loop = true;
@@ -314,6 +372,19 @@ export class AudioEngine {
     crowd.connect(crowdFilter).connect(crowdGain).connect(this.master);
     crowd.start();
     lfo.start();
+    const voicesFilter = ctx.createBiquadFilter();
+    voicesFilter.type = 'bandpass';
+    voicesFilter.frequency.value = 900;
+    voicesFilter.Q.value = 0.5;
+    this.crowdVoicesGain = ctx.createGain();
+    this.crowdVoicesGain.gain.value = 0;
+    const voicesLfo = ctx.createOscillator();
+    voicesLfo.frequency.value = 0.17;
+    const voicesLfoGain = ctx.createGain();
+    voicesLfoGain.gain.value = 0.006;
+    voicesLfo.connect(voicesLfoGain).connect(this.crowdVoicesGain.gain);
+    crowd.connect(voicesFilter).connect(this.crowdVoicesGain).connect(this.master);
+    voicesLfo.start();
 
     return ctx;
   }

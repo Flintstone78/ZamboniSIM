@@ -26,6 +26,7 @@ import { createRink, Rink } from './rink';
 import { IceResurfacer } from './ice';
 import { createZamboni, animateBlade } from './zamboni';
 import { disposeObject } from './assets';
+import { setupTouchControls } from './touch';
 import { Vehicle, Input, type Boundary } from './vehicle';
 import { Parking } from './parkingLevel';
 import { Hud } from './hud';
@@ -109,6 +110,8 @@ export class Game {
   /** Extra seconds granted by CLOCK power-ups. Kept separate so `elapsed`
    *  stays monotonic – the ice painter uses it as its timestamp clock. */
   private timeBonus = 0;
+  private crowdClock = 0; // drives the crowd wave animation
+  private finishClock = 0; // drives the results-screen drone orbit
   private elapsed = 0;
   private collisions = 0;
   private skaterHits = 0;
@@ -181,6 +184,8 @@ export class Game {
       },
       onPlay: () => this.showMenu(),
     });
+
+    setupTouchControls(this.input);
 
     this.input.onTap['KeyC'] = () => {
       const i = CAMERA_MODES.indexOf(this.cameraMode);
@@ -435,7 +440,7 @@ export class Game {
     animateBlade(this.zamboni.blade, false, dt);
     this.syncZamboni();
     this.updateCamera(dt);
-    this.audio.update(this.state === 'playing' ? this.vehicle.forwardSpeed : 0, throttle, false);
+    this.audio.update(this.state === 'playing' ? this.vehicle.forwardSpeed : 0, throttle, false, dt);
 
     const timeLeft = Math.max(0, PARK_TIME_LIMIT - this.elapsed);
     this.hud.updateParking(
@@ -457,6 +462,7 @@ export class Game {
 
   private finishParking(): void {
     this.state = 'finished';
+    this.finishClock = 0;
     const p = this.parking!;
     const res = p.result(this.elapsed);
     const success = res.stars > 0;
@@ -561,6 +567,7 @@ export class Game {
 
     this.shake = Math.max(0, this.shake - dt * 2.2);
     this.spray.update(dt);
+    this.updateCrowdWave(dt);
 
     animateBlade(this.zamboni.blade, this.vehicle.bladeDown, dt);
     this.syncZamboni();
@@ -569,6 +576,7 @@ export class Game {
       this.state === 'playing' ? this.vehicle.forwardSpeed : 0,
       this.state === 'playing' ? this.input.throttle(0) : 0,
       scraping,
+      dt,
     );
 
     if (this.state === 'menu' || this.state === 'splash') return;
@@ -606,6 +614,29 @@ export class Game {
     } else {
       this.flowSurge = POWERUP_FLOW_SECONDS;
       this.hud.popup('2X FLOW!');
+    }
+  }
+
+  /**
+   * A gentle idle sway in the stands, breaking into a travelling stadium wave
+   * through the crowd blocks when the flow combo runs hot (x3+) and at the
+   * results screen after a cleared level.
+   */
+  private updateCrowdWave(dt: number): void {
+    this.crowdClock += dt;
+    const mats = this.arenaGroup?.userData.crowdMats as THREE.MeshStandardMaterial[] | undefined;
+    if (!mats || mats.length === 0) return;
+    const excited =
+      (this.state === 'playing' && this.multiplier >= 3) ||
+      (this.state === 'finished' && this.mode === 'rink');
+    const amp = excited ? 0.014 : 0.004;
+    const speed = excited ? 5.2 : 1.6;
+    for (let i = 0; i < mats.length; i++) {
+      const map = mats[i].map;
+      if (!map) continue;
+      // Bob each block up/down with a phase offset – reads as a wave rolling
+      // around the bowl
+      map.offset.y = Math.max(0, Math.sin(this.crowdClock * speed - i * 0.9)) * amp;
     }
   }
 
@@ -683,6 +714,7 @@ export class Game {
 
   private finish(success: boolean): void {
     this.state = 'finished';
+    this.finishClock = 0;
     if (success) {
       this.audio.finish();
       this.audio.cheer(1.4);
@@ -739,6 +771,24 @@ export class Game {
         Math.cos(this.menuSpin) * 34,
       );
       this.camera.lookAt(0, 0, 0);
+      return;
+    }
+
+    // Results screen: a slow drone sweep over the finished ice (or the lot),
+    // easing out of the gameplay camera and gently descending as it circles.
+    if (this.state === 'finished') {
+      this.finishClock += dt;
+      this.zamboni.driver.visible = true;
+      const t = this.finishClock;
+      const a = t * 0.22 + Math.PI * 0.25;
+      const r = 30 - Math.min(6, t * 0.9);
+      const h = 16 - Math.min(6, t * 0.8);
+      const target = new THREE.Vector3(Math.sin(a) * r, h, Math.cos(a) * r * 0.72);
+      this.camera.up.set(0, 1, 0);
+      if (this.camPos.lengthSq() === 0) this.camPos.copy(target);
+      this.camPos.lerp(target, Math.min(1, dt * (t < 2 ? 1.2 : 4)));
+      this.camera.position.copy(this.camPos);
+      this.camera.lookAt(0, 0.5, 0);
       return;
     }
 

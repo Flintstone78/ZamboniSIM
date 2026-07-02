@@ -203,6 +203,10 @@ export class Input {
   /** Single-player merges both key sets onto player 0. */
   shareKeys = true;
   onTap: Record<string, () => void> = {};
+  /** Touch overlay state (see touch.ts) – merged into the player-0 axes. */
+  touchThrottle = 0;
+  touchSteer = 0;
+  touchBoost = false;
 
   constructor() {
     window.addEventListener('keydown', (e) => {
@@ -233,6 +237,7 @@ export class Input {
       if (this.has(k.fwd)) t = 1;
       if (this.has(k.back)) t = t === 1 ? 0 : -1;
     }
+    if (player === 0 && t === 0) t = this.touchThrottle;
     return t;
   }
 
@@ -242,6 +247,7 @@ export class Input {
       if (this.has(k.left)) s = 1;
       if (this.has(k.right)) s = s === 1 ? 0 : -1;
     }
+    if (player === 0 && s === 0) s = this.touchSteer;
     return s;
   }
 
@@ -252,6 +258,7 @@ export class Input {
 
   /** Turbo held (Shift). Player 1 in co-op uses the right control key. */
   boosting(player: number): boolean {
+    if (player !== 1 && this.touchBoost) return true;
     return player === 1
       ? this.has(['ControlRight', 'ShiftRight'])
       : this.has(['ShiftLeft', 'ShiftRight']);

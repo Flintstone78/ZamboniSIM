@@ -85,7 +85,9 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
 
   // Crowd: a generated audience texture draped as a sloped plane over each
   // deck. Materials start invisible and fade in when the texture loads.
+  // Exposed via userData so the game can run a "wave" through the blocks.
   const crowdMats: THREE.MeshStandardMaterial[] = [];
+  group.userData.crowdMats = crowdMats;
   loadTextureInto('/assets/crowd.png', (tex) => {
     tex.wrapS = THREE.RepeatWrapping;
     for (const mat of crowdMats) {

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 /**
  * Generated assets (textures, GLB models) live under /assets and are loaded
@@ -79,12 +78,21 @@ export function loadModelInto(
   url: string,
   apply: (model: THREE.Group) => void,
 ): void {
-  new GLTFLoader().load(
-    assetUrl(url),
-    (gltf) => apply(gltf.scene),
-    undefined,
+  // The GLTF loader is code-split out of the main bundle – models upgrade the
+  // procedural look asynchronously anyway, so the extra tick is invisible.
+  void import('three/addons/loaders/GLTFLoader.js').then(
+    ({ GLTFLoader }) => {
+      new GLTFLoader().load(
+        assetUrl(url),
+        (gltf) => apply(gltf.scene),
+        undefined,
+        () => {
+          /* asset missing – keep the procedural model */
+        },
+      );
+    },
     () => {
-      /* asset missing – keep the procedural model */
+      /* chunk failed to load (offline?) – keep the procedural model */
     },
   );
 }
