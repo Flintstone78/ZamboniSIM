@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZAMBONI KING</title>
+    <style>
+      :root {
+        --hud-bg: rgba(10, 18, 30, 0.72);
+        --hud-border: rgba(120, 180, 255, 0.25);
+        --accent: #4fc3f7;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #05080d; }
+      body { font-family: "Segoe UI", system-ui, sans-serif; color: #e8f1fa; }
+      canvas { display: block; }
+
+      .hud {
+        position: fixed;
+        pointer-events: none;
+        user-select: none;
+      }
+      .panel {
+        background: var(--hud-bg);
+        border: 1px solid var(--hud-border);
+        border-radius: 10px;
+        padding: 10px 14px;
+        backdrop-filter: blur(4px);
+      }
+
+      #hud-progress { top: 16px; left: 16px; width: 280px; }
+      #hud-progress .label {
+        display: flex; justify-content: space-between;
+        font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase;
+        color: #9fc4e8; margin-bottom: 6px;
+      }
+      #progress-pct { color: var(--accent); font-weight: 700; }
+      #progress-bar-track {
+        height: 10px; border-radius: 5px; overflow: hidden;
+        background: rgba(255, 255, 255, 0.12);
+      }
+      #progress-bar-fill {
+        height: 100%; width: 0%;
+        background: linear-gradient(90deg, #29b6f6, #81d4fa);
+        transition: width 0.15s linear;
+      }
+      #minimap { margin-top: 10px; display: block; border-radius: 6px; width: 100%; }
+
+      #hud-stats { top: 16px; right: 16px; text-align: right; }
+      #hud-stats .row { font-size: 14px; line-height: 1.7; color: #c4d8ec; }
+      #hud-stats .value { color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+      #score-value { color: var(--accent); font-size: 20px; font-weight: 700; }
+
+      #hud-speed { bottom: 16px; left: 16px; font-size: 14px; color: #c4d8ec; }
+      #hud-speed .value { font-size: 22px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+
+      #boost {
+        bottom: 112px; left: 16px; width: 150px; padding: 8px 12px;
+      }
+      #boost .label {
+        font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+        color: #9fc4e8; margin-bottom: 5px;
+      }
+      #boost .track { height: 9px; border-radius: 5px; overflow: hidden; background: rgba(255,255,255,0.12); }
+      #boost .fill {
+        height: 100%; width: 100%;
+        background: linear-gradient(90deg, #ff8a3d, #ffd54f);
+        transition: width 0.08s linear;
+      }
+      #boost.active .label { color: #ffd54f; }
+      #boost.low .fill { background: #6b7785; }
+
+      #hud-help {
+        bottom: 16px; left: 50%; transform: translateX(-50%);
+        font-size: 12.5px; color: #8fb2d4; text-align: center;
+      }
+      kbd {
+        background: rgba(255, 255, 255, 0.14); border-radius: 4px;
+        padding: 1px 6px; font-family: inherit; color: #fff;
+      }
+
+      #toast {
+        top: 22%; left: 50%; transform: translateX(-50%);
+        font-size: 26px; font-weight: 800; color: #ff7043;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+        opacity: 0; transition: opacity 0.25s;
+      }
+
+      #combo {
+        bottom: 96px; right: 22px; text-align: right;
+        font-weight: 900; font-style: italic; color: #ffd54f;
+        text-shadow: 0 2px 10px rgba(0,0,0,0.6); opacity: 0;
+        transition: opacity 0.2s; line-height: 0.95;
+      }
+      #combo .mult { font-size: 42px; display: block; }
+      #combo .label { font-size: 13px; letter-spacing: 0.12em; color: #fff3c4; }
+      #combo .bar {
+        margin-top: 4px; height: 5px; width: 110px; margin-left: auto;
+        background: rgba(255,255,255,0.18); border-radius: 3px; overflow: hidden;
+      }
+      #combo .bar i { display: block; height: 100%; background: #ffd54f; }
+
+      #popup {
+        top: 34%; left: 50%; transform: translateX(-50%) scale(0.6);
+        font-size: 40px; font-weight: 900; font-style: italic;
+        color: #fff; text-shadow: 0 0 18px #4fc3f7, 0 3px 10px rgba(0,0,0,0.7);
+        opacity: 0; pointer-events: none;
+      }
+      #popup.show { animation: popPop 0.9s ease-out; }
+      @keyframes popPop {
+        0% { opacity: 0; transform: translateX(-50%) scale(0.5); }
+        25% { opacity: 1; transform: translateX(-50%) scale(1.15); }
+        70% { opacity: 1; transform: translateX(-50%) scale(1); }
+        100% { opacity: 0; transform: translateX(-50%) scale(1.05); }
+      }
+
+      #finish-overlay {
+        position: fixed; inset: 0; display: none;
+        align-items: center; justify-content: center;
+        background: rgba(4, 8, 14, 0.78);
+      }
+      #finish-overlay .card {
+        background: var(--hud-bg); border: 1px solid var(--hud-border);
+        border-radius: 16px; padding: 36px 48px; text-align: center; min-width: 340px;
+      }
+      #finish-overlay h1 { font-size: 30px; margin-bottom: 4px; }
+      #finish-stars { font-size: 34px; letter-spacing: 6px; margin: 10px 0 18px; color: #ffd54f; }
+      #finish-overlay .breakdown {
+        text-align: left; font-size: 15px; color: #c4d8ec; line-height: 2;
+        margin-bottom: 22px;
+      }
+      #finish-overlay .breakdown .value { float: right; color: #fff; font-weight: 600; margin-left: 32px; }
+      #finish-total { font-size: 22px; color: var(--accent); font-weight: 800; }
+      #finish-record {
+        min-height: 20px; margin: -8px 0 20px;
+        font-size: 15px; font-weight: 700; color: #ffd54f;
+      }
+      #finish-overlay .buttons { display: flex; gap: 10px; justify-content: center; }
+      #finish-overlay button.secondary { background: rgba(255,255,255,0.16); color: #e8f1fa; }
+
+      #time-value.low { color: #ff7043; }
+      #blade-indicator {
+        bottom: 64px; left: 16px;
+        font-size: 12.5px; font-weight: 700; letter-spacing: 0.06em;
+        color: #8fb2d4; padding: 6px 10px;
+      }
+      #blade-indicator.down { color: #aef3b9; border-color: rgba(120,255,160,0.35); }
+      #level-name { top: 16px; left: 50%; transform: translateX(-50%); font-size: 13px; color: #cfe2f5; }
+
+      /* Title splash – the generated key art cover */
+      #splash-overlay {
+        position: fixed; inset: 0; display: none;
+        flex-direction: column; align-items: center; justify-content: flex-end;
+        background: #06121f; overflow: hidden;
+      }
+      #splash-img {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: cover; object-position: center;
+      }
+      #splash-fade {
+        position: absolute; inset: 0;
+        background: linear-gradient(transparent 55%, rgba(4,8,14,0.85));
+      }
+      #splash-play {
+        position: relative; margin-bottom: 9vh; pointer-events: auto;
+        cursor: pointer; font: inherit; font-weight: 800;
+        font-size: 22px; letter-spacing: 0.12em; color: #06121f;
+        background: linear-gradient(#ffe082, #ffb300);
+        border: none; border-radius: 12px; padding: 16px 54px;
+        box-shadow: 0 6px 0 #c87f00, 0 10px 30px rgba(0,0,0,0.5);
+        animation: splashPulse 1.6s ease-in-out infinite;
+      }
+      #splash-play:active { transform: translateY(4px); box-shadow: 0 2px 0 #c87f00; }
+      #splash-hint {
+        position: relative; margin-bottom: 4vh; pointer-events: none;
+        color: #cfe2f5; font-size: 13px; letter-spacing: 0.08em; opacity: 0.85;
+      }
+      @keyframes splashPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.04); }
+      }
+
+      #menu-overlay {
+        position: fixed; inset: 0; display: none;
+        align-items: center; justify-content: center;
+        background: linear-gradient(rgba(4,8,14,0.62), rgba(4,8,14,0.86));
+        background-size: cover; background-position: center;
+      }
+      #menu-overlay .card {
+        background: var(--hud-bg); border: 1px solid var(--hud-border);
+        border-radius: 16px; padding: 30px 38px; text-align: center;
+        max-width: 660px; width: calc(100% - 40px); pointer-events: auto;
+      }
+      #menu-overlay h1 { font-size: 34px; letter-spacing: 0.04em; }
+      #menu-overlay .tagline { color: #9fc4e8; font-size: 14px; margin: 4px 0 18px; }
+      .standard-toggle { display: flex; gap: 8px; justify-content: center; margin-bottom: 18px; }
+      .standard-toggle button {
+        cursor: pointer; font: inherit; font-size: 13.5px; font-weight: 600;
+        color: #c4d8ec; background: rgba(255,255,255,0.08);
+        border: 1px solid var(--hud-border); border-radius: 8px; padding: 8px 16px;
+      }
+      .standard-toggle button.selected {
+        background: var(--accent); color: #06121f; border-color: var(--accent);
+      }
+      #level-list { display: flex; flex-direction: column; gap: 8px; }
+      .level-card {
+        cursor: pointer; font: inherit; text-align: left;
+        display: grid; grid-template-columns: 130px 1fr auto; gap: 2px 14px;
+        align-items: center;
+        color: #e8f1fa; background: rgba(255,255,255,0.06);
+        border: 1px solid var(--hud-border); border-radius: 10px; padding: 10px 16px;
+      }
+      .level-card:hover:not(:disabled) { background: rgba(79,195,247,0.16); }
+      .level-card .division { font-size: 12px; color: #9fc4e8; text-transform: uppercase; letter-spacing: 0.08em; }
+      .level-card .name { font-size: 16px; font-weight: 700; }
+      .level-card .stars { color: #ffd54f; font-size: 15px; letter-spacing: 2px; }
+      .level-card .desc { grid-column: 1 / 4; font-size: 12.5px; color: #8fb2d4; }
+      .level-card.locked { opacity: 0.45; cursor: default; }
+      #menu-help { margin-top: 16px; font-size: 12px; color: #8fb2d4; }
+      body.in-menu .hud { display: none; }
+
+      /* Player handle + global leaderboard */
+      #player-row {
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        margin: 16px 0 6px; font-size: 13px; color: #9fc4e8;
+      }
+      #player-name {
+        font: inherit; font-weight: 700; letter-spacing: 0.04em;
+        color: #e8f1fa; background: rgba(255,255,255,0.08);
+        border: 1px solid var(--hud-border); border-radius: 8px;
+        padding: 7px 12px; width: 180px; text-align: center; text-transform: uppercase;
+      }
+      #leaderboard { margin-top: 4px; }
+      #lb-title {
+        font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+        color: #ffd54f; text-transform: uppercase; margin-bottom: 6px;
+      }
+      #lb-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+      #lb-list li {
+        display: grid; grid-template-columns: 28px 1fr auto; gap: 10px;
+        font-size: 13px; color: #cfe2f5; padding: 3px 12px;
+        background: rgba(255,255,255,0.04); border-radius: 6px;
+      }
+      #lb-list li.you { background: rgba(79,195,247,0.18); color: #fff; font-weight: 700; }
+      #lb-list li .rank { color: #8fb2d4; text-align: right; }
+      #lb-list li .pts { color: #ffd54f; }
+      #lb-you { margin-top: 6px; font-size: 12.5px; color: #9fc4e8; }
+      #lb-empty { font-size: 12.5px; color: #6f8aa3; }
+      #finish-overlay button {
+        pointer-events: auto; cursor: pointer;
+        font: inherit; font-weight: 700; font-size: 16px;
+        color: #06121f; background: var(--accent);
+        border: 0; border-radius: 8px; padding: 12px 30px;
+      }
+      #finish-overlay button:hover { filter: brightness(1.1); }
+
+      /* Touch controls (only injected on coarse-pointer devices) */
+      #touch-controls {
+        position: fixed; inset: 0; pointer-events: none; z-index: 40;
+      }
+      .touch-pad {
+        pointer-events: auto; touch-action: none;
+        position: absolute; left: 16px; bottom: 18px;
+        width: 190px; height: 74px; border-radius: 37px;
+        background: rgba(10, 22, 36, 0.45);
+        border: 1px solid rgba(159, 208, 255, 0.35);
+        display: flex; align-items: center; justify-content: center;
+      }
+      .touch-knob {
+        width: 54px; height: 54px; border-radius: 50%;
+        background: rgba(79, 195, 247, 0.55);
+        border: 2px solid rgba(207, 232, 255, 0.7);
+        transition: transform 0.04s linear;
+      }
+      .touch-buttons {
+        pointer-events: auto; touch-action: none;
+        position: absolute; right: 14px; bottom: 16px;
+        display: grid; grid-template-columns: auto auto; gap: 10px;
+        align-items: end;
+      }
+      .touch-btn {
+        pointer-events: auto; touch-action: none; user-select: none;
+        -webkit-user-select: none; cursor: pointer;
+        font: inherit; font-weight: 800; font-size: 15px;
+        color: #dff0ff; background: rgba(10, 22, 36, 0.5);
+        border: 1px solid rgba(159, 208, 255, 0.4);
+        border-radius: 50%; width: 72px; height: 72px;
+      }
+      .touch-btn.gas { width: 86px; height: 86px; background: rgba(27, 94, 32, 0.55); }
+      .touch-btn.rev { font-size: 22px; }
+      .touch-btn.turbo { font-size: 24px; background: rgba(191, 129, 10, 0.5); }
+      .touch-btn.blade { font-size: 12.5px; background: rgba(21, 60, 96, 0.6); }
+      .touch-btn.held { filter: brightness(1.5); transform: scale(0.94); }
+      /* Lift the bottom-left HUD clear of the steering pad in touch mode,
+         and drop the keyboard help line entirely */
+      body.touch-mode #hud-speed { bottom: 108px; }
+      body.touch-mode #blade-indicator { bottom: 156px; }
+      body.touch-mode #boost { bottom: 204px; }
+      body.touch-mode #hud-help { display: none; }
+    </style>
+    <script type="module" crossorigin src="/ZamboniSIM/assets/index-DZWlYEn9.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="hud-progress" class="hud panel">
+      <div class="label"><span id="progress-label">Resurfaced</span><span id="progress-pct">0%</span></div>
+      <div id="progress-bar-track"><div id="progress-bar-fill"></div></div>
+      <canvas id="minimap" width="252" height="126"></canvas>
+    </div>
+
+    <div id="hud-stats" class="hud panel">
+      <div class="row"><span id="stat-label-1">Time</span> <span class="value" id="time-value">0:00</span></div>
+      <div class="row"><span id="stat-label-2">Precision</span> <span class="value" id="precision-value">100%</span></div>
+      <div class="row"><span id="stat-label-3">Crashes</span> <span class="value" id="collision-value">0</span></div>
+      <div class="row" id="stat-row-4"><span id="stat-label-4">Players</span> <span class="value" id="cone-value">0</span></div>
+      <div class="row"><span id="score-value">0</span></div>
+    </div>
+
+    <div id="hud-speed" class="hud panel">
+      <span class="value" id="speed-value">0</span> km/h
+    </div>
+
+    <div id="boost" class="hud panel">
+      <div class="label">Turbo · SHIFT</div>
+      <div class="track"><div class="fill" id="boost-fill"></div></div>
+    </div>
+
+    <div id="combo" class="hud">
+      <span class="mult">x2</span>
+      <span class="label">COMBO</span>
+      <div class="bar"><i></i></div>
+    </div>
+    <div id="popup" class="hud"></div>
+
+    <div id="blade-indicator" class="hud panel">BLADE UP – press SPACE</div>
+    <div id="level-name" class="hud panel"></div>
+
+    <div id="hud-help" class="hud">
+      <kbd>W</kbd>/<kbd>S</kbd> throttle/reverse &nbsp; <kbd>A</kbd>/<kbd>D</kbd> steer &nbsp;
+      <kbd>SPACE</kbd> blade &nbsp; <kbd>SHIFT</kbd> turbo &nbsp; <kbd>C</kbd> camera &nbsp;
+      <kbd>M</kbd> sound &nbsp; <kbd>R</kbd> restart &nbsp; <kbd>ESC</kbd> menu
+    </div>
+
+    <div id="toast" class="hud"></div>
+
+    <div id="finish-overlay">
+      <div class="card">
+        <h1 id="finish-title">Isen är spolad!</h1>
+        <div id="finish-stars"></div>
+        <div class="breakdown">
+          <div>Coverage <span class="value" id="finish-coverage"></span></div>
+          <div>Precision <span class="value" id="finish-precision"></span></div>
+          <div>Time bonus <span class="value" id="finish-time"></span></div>
+          <div>Flow bonus <span class="value" id="finish-flow"></span></div>
+          <div>Crash penalty <span class="value" id="finish-collisions"></span></div>
+          <div>Players hit <span class="value" id="finish-cones"></span></div>
+          <div style="margin-top:8px">Total <span class="value" id="finish-total"></span></div>
+        </div>
+        <div id="finish-record"></div>
+        <div class="buttons">
+          <button id="next-btn">Next level →</button>
+          <button id="restart-btn" class="secondary">Play again</button>
+          <button id="menu-btn" class="secondary">Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="splash-overlay">
+      <img id="splash-img" alt="ZAMBONI KING" />
+      <div id="splash-fade"></div>
+      <button id="splash-play">▶ PLAY</button>
+      <div id="splash-hint">Press any key to start</div>
+    </div>
+
+    <div id="menu-overlay">
+      <div class="card">
+        <h1>ZAMBONI KING 👑</h1>
+        <div class="tagline">Resurface your way from the bottom leagues to the top — and beyond.</div>
+        <div class="standard-toggle">
+          <button id="standard-europa">Europe · 30 m</button>
+          <button id="standard-nordamerika">North America · 26 m</button>
+        </div>
+        <div id="level-list"></div>
+        <div id="player-row">
+          <label for="player-name">Name</label>
+          <input id="player-name" maxlength="16" placeholder="ZAMBONI HERO" />
+        </div>
+        <div id="leaderboard">
+          <div id="lb-title">🏆 Global Top — Career Score</div>
+          <ol id="lb-list"></ol>
+          <div id="lb-you"></div>
+        </div>
+        <div id="menu-help">
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp;
+          <kbd>SPACE</kbd> blade up/down &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>ESC</kbd> menu
+        </div>
+      </div>
+    </div>
+
+  </body>
+</html>
