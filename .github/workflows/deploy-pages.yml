@@ -1,0 +1,44 @@
+# Builds the game and publishes dist/ to the gh-pages branch on every push.
+# GitHub auto-enables Pages for a gh-pages branch, which the workflow token
+# is allowed to do (enabling Pages via the API requires admin and fails).
+name: deploy-pages
+
+on:
+  push:
+    branches:
+      - main
+      - claude/wonderful-bardeen-xfn0nb
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          BASE_PATH: /ZamboniSIM/
+      - name: Publish dist/ to gh-pages
+        run: |
+          cd dist
+          touch .nojekyll
+          git init -b gh-pages
+          git config user.name "deploy"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

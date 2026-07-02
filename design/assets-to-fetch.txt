@@ -1,0 +1,4 @@
+# Genererade assets som fetch-assets-workflowen speglar in i repot.
+# Format: url|sökväg
+https://d8j0ntlcm91z4.cloudfront.net/user_31lzKoSpboO8qwWIiCCdqBBI5ak/hf_20260614_115330_6bfa85a2-132f-4e41-816e-9681bafcbcfa.png|design/player_a.png
+https://d8j0ntlcm91z4.cloudfront.net/user_31lzKoSpboO8qwWIiCCdqBBI5ak/hf_20260614_115330_c8806491-cec2-4af0-9655-c4555000e61f.png|design/player_b.png
