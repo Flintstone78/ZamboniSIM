@@ -324,7 +324,7 @@ export class Game {
     // GPU memory (shadow maps, canvas textures, geometry) for the session.
     if (this.rink) {
       this.scene.remove(this.rink.group);
-      disposeObject(this.rink.group, [this.ice.texture]);
+      disposeObject(this.rink.group, [this.ice.texture, this.ice.tintTexture]);
     }
     if (this.arenaGroup) {
       this.scene.remove(this.arenaGroup);
@@ -336,7 +336,9 @@ export class Game {
     this.scene.add(this.gate.group);
     this.rink = createRink(this.level.tier >= 3); // ice ads on top-tier arenas
     this.rink.iceMaterial.roughnessMap = this.ice.texture;
-    this.ice.attachColorMap(this.rink.colorTexture, this.rink.colorCanvas);
+    this.rink.tintMaterial.map = this.ice.tintTexture;
+    this.rink.tintMaterial.visible = true;
+    this.rink.tintMaterial.needsUpdate = true;
     this.scene.add(this.rink.group);
     this.arenaGroup = createArena(this.scene, this.level);
     this.goals.reset();

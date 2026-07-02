@@ -428,14 +428,16 @@ export function createArena(scene: THREE.Scene, level: LevelDef): THREE.Group {
   }
 
   // ---- Lighting ----
+  // Kept close to neutral: the hall is baked into the ice's reflections, so a
+  // warm palette here would tint the whole sheet beige
   group.add(
     new THREE.HemisphereLight(
-      spec.barn ? '#cdbfa0' : '#bdd4ea',
+      spec.barn ? '#cfc9b8' : '#bdd4ea',
       '#1c222b',
       (spec.barn ? 0.5 : 0.6) * level.lightIntensity,
     ),
   );
-  const key = new THREE.DirectionalLight(spec.barn ? '#ffe6b8' : '#fdf6e8', 2.1 * level.lightIntensity);
+  const key = new THREE.DirectionalLight(spec.barn ? '#f6ecd7' : '#fbfaf4', 2.1 * level.lightIntensity);
   key.position.set(18, 26, 12);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);

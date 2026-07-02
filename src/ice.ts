@@ -29,11 +29,11 @@ const ROUGH_CLEAN = 26; // freshly resurfaced = near-mirror
  */
 export class IceResurfacer {
   readonly texture: THREE.CanvasTexture;
+  /** Wet-strip overlay: painted swaths as an RGBA canvas draped just above
+   *  the ice, so the big markings texture never has to re-upload. */
+  readonly tintTexture: THREE.CanvasTexture;
 
   private readonly ctx: CanvasRenderingContext2D;
-  private colorTexture: THREE.CanvasTexture | null = null;
-  private colorCtx: CanvasRenderingContext2D | null = null;
-  private pristineColor: HTMLCanvasElement | null = null;
   private readonly tintCtx: CanvasRenderingContext2D;
   private colorDirty = false;
   private lastColorFlush = -1;
@@ -57,25 +57,19 @@ export class IceResurfacer {
     canvas.height = TEX_H;
     this.ctx = canvas.getContext('2d')!;
     this.texture = new THREE.CanvasTexture(canvas);
+    // Re-uploaded every painting frame – skipping the mip chain makes that a
+    // cheap single-level upload instead of a full-pyramid rebuild
+    this.texture.generateMipmaps = false;
+    this.texture.minFilter = THREE.LinearFilter;
     const tintCanvas = document.createElement('canvas');
     tintCanvas.width = TEX_W;
     tintCanvas.height = TEX_H;
     this.tintCtx = tintCanvas.getContext('2d')!;
+    this.tintTexture = new THREE.CanvasTexture(tintCanvas);
+    this.tintTexture.colorSpace = THREE.SRGBColorSpace;
+    this.tintTexture.generateMipmaps = false;
+    this.tintTexture.minFilter = THREE.LinearFilter;
     this.reset();
-  }
-
-  /**
-   * Freshly resurfaced ice is wet and reads darker from above, so the strip
-   * is also tinted into the ice colour map – the roughness map alone only
-   * shows at grazing angles.
-   */
-  attachColorMap(texture: THREE.CanvasTexture, canvas: HTMLCanvasElement): void {
-    this.colorTexture = texture;
-    this.colorCtx = canvas.getContext('2d')!;
-    this.pristineColor = document.createElement('canvas');
-    this.pristineColor.width = canvas.width;
-    this.pristineColor.height = canvas.height;
-    this.pristineColor.getContext('2d')!.drawImage(canvas, 0, 0);
   }
 
   reset(): void {
@@ -100,10 +94,7 @@ export class IceResurfacer {
     this.texture.needsUpdate = true;
 
     this.tintCtx.clearRect(0, 0, TEX_W, TEX_H);
-    if (this.colorCtx && this.pristineColor) {
-      this.colorCtx.drawImage(this.pristineColor, 0, 0);
-      this.colorTexture!.needsUpdate = true;
-    }
+    this.tintTexture.needsUpdate = true;
     this.colorDirty = false;
     this.lastColorFlush = -1;
 
@@ -250,18 +241,14 @@ export class IceResurfacer {
     return total === 0 ? 1 : painted / total;
   }
 
-  /** Recomposite pristine markings + wet tint, throttled to ~7 Hz. */
+  /** Push the wet-strip canvas to the GPU, throttled to ~7 Hz. Just a small
+   *  single-level upload – the markings texture is never touched. */
   private flushColor(time: number, force = false): void {
-    if (!this.colorCtx || !this.pristineColor || !this.colorDirty) return;
+    if (!this.colorDirty) return;
     if (!force && this.lastColorFlush >= 0 && time - this.lastColorFlush < 0.15) return;
     this.lastColorFlush = time;
     this.colorDirty = false;
-    const ctx = this.colorCtx;
-    ctx.drawImage(this.pristineColor, 0, 0);
-    ctx.globalAlpha = 0.35;
-    ctx.drawImage(this.tintCtx.canvas, 0, 0, ctx.canvas.width, ctx.canvas.height);
-    ctx.globalAlpha = 1;
-    this.colorTexture!.needsUpdate = true;
+    this.tintTexture.needsUpdate = true;
   }
 
   private fillQuad(

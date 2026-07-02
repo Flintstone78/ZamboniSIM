@@ -22,7 +22,9 @@ export function loadTextureInto(
   const resolved = assetUrl(url);
   const cached = textureCache.get(resolved);
   if (cached) {
-    apply(cached);
+    // Deliver async like the network path: callers (e.g. the arena's crowd
+    // fade-in) register their materials after this call returns
+    queueMicrotask(() => apply(cached));
     return;
   }
   new THREE.TextureLoader().load(

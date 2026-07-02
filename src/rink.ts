@@ -185,7 +185,7 @@ function createMarkingsTexture(
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = 8; // static since the wet strip moved to its own overlay
   return { texture: tex, canvas };
 }
 
@@ -272,9 +272,9 @@ function perimeterCapGeometry(
 export interface Rink {
   group: THREE.Group;
   iceMaterial: THREE.MeshPhysicalMaterial;
-  /** The ice colour map – the resurfacer paints a wet tint into it. */
-  colorTexture: THREE.CanvasTexture;
-  colorCanvas: HTMLCanvasElement;
+  /** Wet-strip overlay just above the ice; the game wires the resurfacer's
+   *  tint texture into its map (kept invisible until then). */
+  tintMaterial: THREE.MeshStandardMaterial;
 }
 
 export function createRink(iceAds = false): Rink {
@@ -285,12 +285,32 @@ export function createRink(iceAds = false): Rink {
     map: markings.texture,
     roughness: 1, // modulated by the dynamic roughness map from IceResurfacer
     metalness: 0,
-    envMapIntensity: 1.1,
+    // Tempered so the baked (often warm-lit) hall doesn't tint the white ice
+    envMapIntensity: 0.75,
   });
   const ice = new THREE.Mesh(new THREE.PlaneGeometry(RINK_LENGTH, RINK_WIDTH), iceMaterial);
   ice.rotation.x = -Math.PI / 2;
   ice.receiveShadow = true;
   group.add(ice);
+
+  // Wet-strip overlay: freshly resurfaced swaths read darker from above. A
+  // separate transparent plane means only its small canvas re-uploads while
+  // resurfacing – the 2048px markings map below stays static (and crisp).
+  const tintMaterial = new THREE.MeshStandardMaterial({
+    transparent: true,
+    opacity: 0.35,
+    roughness: 1,
+    metalness: 0,
+    depthWrite: false,
+    visible: false, // until the game wires the tint texture in
+  });
+  const tintPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(RINK_LENGTH, RINK_WIDTH),
+    tintMaterial,
+  );
+  tintPlane.rotation.x = -Math.PI / 2;
+  tintPlane.position.y = 0.006;
+  group.add(tintPlane);
 
   // Boards: inner + outer faces and a red handrail cap, built as ribbons so
   // the zamboni gate can punch a real gap through them
@@ -394,5 +414,5 @@ export function createRink(iceAds = false): Rink {
   );
   group.add(glass);
 
-  return { group, iceMaterial, colorTexture: markings.texture, colorCanvas: markings.canvas };
+  return { group, iceMaterial, tintMaterial };
 }
