@@ -221,6 +221,12 @@ export class Hud {
     this.bladeValue.classList.toggle('down', down);
   }
 
+  /** Repurpose the blade indicator for modes where SPACE does something else. */
+  setActionHint(text: string): void {
+    this.bladeValue.textContent = text;
+    this.bladeValue.classList.remove('down');
+  }
+
   update(
     coverage: number,
     precision: number,

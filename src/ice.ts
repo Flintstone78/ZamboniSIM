@@ -130,6 +130,9 @@ export class IceResurfacer {
   /** Call when the blade is lifted (reversing/stopped) to break the strip. */
   liftBlade(strip = 0): void {
     this.strips[strip].hasPrev = false;
+    // Composite any tint still buffered in the throttle window so the last
+    // metre of the wet strip isn't silently dropped
+    if (this.colorDirty) this.flushColor(this.lastColorFlush, true);
   }
 
   /**
@@ -248,9 +251,9 @@ export class IceResurfacer {
   }
 
   /** Recomposite pristine markings + wet tint, throttled to ~7 Hz. */
-  private flushColor(time: number): void {
+  private flushColor(time: number, force = false): void {
     if (!this.colorCtx || !this.pristineColor || !this.colorDirty) return;
-    if (this.lastColorFlush >= 0 && time - this.lastColorFlush < 0.15) return;
+    if (!force && this.lastColorFlush >= 0 && time - this.lastColorFlush < 0.15) return;
     this.lastColorFlush = time;
     this.colorDirty = false;
     const ctx = this.colorCtx;

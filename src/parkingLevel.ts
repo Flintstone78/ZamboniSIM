@@ -26,6 +26,7 @@ import {
   type Stall,
 } from './parking';
 import type { Vehicle, Boundary } from './vehicle';
+import { disposeObject } from './assets';
 
 type StallState = 'empty' | 'incoming' | 'snowed' | 'occupied';
 
@@ -108,6 +109,7 @@ export class Parking {
   }
 
   reset(): void {
+    disposeObject(this.dynamic); // cars/indicators/piles are built per round
     this.dynamic.clear();
     for (const r of this.stalls) {
       r.state = 'empty';
@@ -222,6 +224,7 @@ export class Parking {
     if (r.car) r.car.position.z = r.stall.cz;
     if (r.indicator) {
       this.dynamic.remove(r.indicator);
+      disposeObject(r.indicator);
       r.indicator = null;
     }
   }
@@ -251,10 +254,12 @@ export class Parking {
 
     if (best.car) {
       this.dynamic.remove(best.car);
+      disposeObject(best.car);
       best.car = null;
     }
     if (best.indicator) {
       this.dynamic.remove(best.indicator);
+      disposeObject(best.indicator);
       best.indicator = null;
     }
     best.state = 'snowed';
@@ -283,7 +288,8 @@ export class Parking {
     const collisionPenalty = this.collisions * SCORE_COLLISION_PENALTY;
     const total = stallScore + timeBonus - collisionPenalty;
     const frac = this.snowed / this.total;
-    const stars = frac >= 0.9 ? 3 : frac >= 0.6 ? 2 : 1;
+    // Nothing snowed is a failed round – no free star for idling
+    const stars = frac <= 0 ? 0 : frac >= 0.9 ? 3 : frac >= 0.6 ? 2 : 1;
     const title =
       this.snowed === this.total
         ? 'Whole lot snowed!'

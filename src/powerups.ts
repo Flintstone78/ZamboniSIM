@@ -71,7 +71,7 @@ export class PowerUps {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = POWERUP_INTERVAL;
-      this.spawnOne();
+      this.spawnOne(vehiclePos);
     }
     for (const p of this.pool) {
       if (!p.active) continue;
@@ -86,7 +86,7 @@ export class PowerUps {
     }
   }
 
-  private spawnOne(): void {
+  private spawnOne(vehiclePos: THREE.Vector2): void {
     const slot = this.pool.find((p) => !p.active);
     if (!slot) return;
     for (let attempt = 0; attempt < 60; attempt++) {
@@ -94,6 +94,8 @@ export class PowerUps {
       const z = (Math.random() - 0.5) * (RINK_WIDTH - 8);
       if (rinkSignedDistance(x, z) > -2) continue;
       if (inGoalZone(x, z, 1.5)) continue;
+      // Not right under the zamboni – it would be consumed before it's seen
+      if (Math.hypot(x - vehiclePos.x, z - vehiclePos.y) < 6) continue;
       slot.pos.set(x, z);
       slot.group.position.set(x, 0.7, z);
       slot.active = true;

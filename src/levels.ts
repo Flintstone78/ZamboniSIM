@@ -117,7 +117,10 @@ const PROGRESS_KEY = 'zambonisim.progress';
 
 export function loadStars(): Record<string, number> {
   try {
-    return JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '{}');
+    const v: unknown = JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '{}');
+    // Guard against a corrupt/foreign value under the key ('null', '5', '[]'…)
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+    return v as Record<string, number>;
   } catch {
     return {};
   }

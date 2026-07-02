@@ -25,6 +25,7 @@ import {
 import { createRink, Rink } from './rink';
 import { IceResurfacer } from './ice';
 import { createZamboni, animateBlade } from './zamboni';
+import { disposeObject } from './assets';
 import { Vehicle, Input, type Boundary } from './vehicle';
 import { Parking } from './parkingLevel';
 import { Hud } from './hud';
@@ -103,6 +104,11 @@ export class Game {
 
   private cameraMode: CameraMode = 'chase';
   private camPos = new THREE.Vector3();
+  private pmrem: THREE.PMREMGenerator | null = null;
+  private envRT: THREE.WebGLRenderTarget | null = null;
+  /** Extra seconds granted by CLOCK power-ups. Kept separate so `elapsed`
+   *  stays monotonic – the ice painter uses it as its timestamp clock. */
+  private timeBonus = 0;
   private elapsed = 0;
   private collisions = 0;
   private skaterHits = 0;
@@ -181,7 +187,8 @@ export class Game {
       this.cameraMode = CAMERA_MODES[(i + 1) % CAMERA_MODES.length];
     };
     this.input.onTap['KeyR'] = () => {
-      if (this.state !== 'menu') this.startLevel(this.level.id);
+      // Restart only mid-run/at the results – not from the splash or the menu
+      if (this.state === 'playing' || this.state === 'finished') this.startLevel(this.level.id);
     };
     this.input.onTap['KeyM'] = () => {
       this.hud.showToast(this.audio.toggleMuted() ? 'Sound off' : 'Sound on');
@@ -227,6 +234,37 @@ export class Game {
     this.scene.environment = envMap;
   }
 
+  /**
+   * Bake the freshly built hall into the environment map so clean ice mirrors
+   * the actual arena – light rig, crowd, scoreboard – instead of a generic
+   * room. One 256px cubemap render per level start; the moving pieces are
+   * hidden so they don't freeze into the reflection.
+   */
+  private captureEnvironment(): void {
+    if (!this.pmrem) this.pmrem = new THREE.PMREMGenerator(this.renderer);
+    const movers: Array<[THREE.Object3D, boolean]> = [];
+    for (const o of [
+      this.zamboni.group,
+      this.spray.points,
+      this.skaters.group,
+      this.obstacles.group,
+      this.powerups.group,
+    ] as THREE.Object3D[]) {
+      movers.push([o, o.visible]);
+      o.visible = false;
+    }
+    const fog = this.scene.fog;
+    this.scene.fog = null; // bake crisp reflections; fog stays a live effect
+    const old = this.envRT;
+    this.envRT = this.pmrem.fromScene(this.scene, 0, 0.1, 250, {
+      position: new THREE.Vector3(0, 2.5, 0),
+    });
+    this.scene.environment = this.envRT.texture;
+    old?.dispose();
+    this.scene.fog = fog;
+    for (const [o, v] of movers) o.visible = v;
+  }
+
   showSplash(): void {
     this.state = 'splash';
     this.hud.hideFinish();
@@ -236,6 +274,7 @@ export class Game {
 
   showMenu(): void {
     this.state = 'menu';
+    this.audio.setCrowd(0); // no arena murmur under the menu
     this.hud.hideSplash();
     this.hud.hideFinish();
     this.hud.renderMenu(levelsForRegion(this.standard), loadStars(), this.standard);
@@ -275,10 +314,19 @@ export class Game {
     this.standard = this.level.region;
     setRinkStandard(this.standard);
 
-    // Swap out the per-level world: rink (width may change), arena, gate
-    if (this.rink) this.scene.remove(this.rink.group);
-    if (this.arenaGroup) this.scene.remove(this.arenaGroup);
+    // Swap out the per-level world: rink (width may change), arena, gate.
+    // Dispose what's removed – rebuilding on every restart would otherwise pin
+    // GPU memory (shadow maps, canvas textures, geometry) for the session.
+    if (this.rink) {
+      this.scene.remove(this.rink.group);
+      disposeObject(this.rink.group, [this.ice.texture]);
+    }
+    if (this.arenaGroup) {
+      this.scene.remove(this.arenaGroup);
+      disposeObject(this.arenaGroup);
+    }
     this.scene.remove(this.gate.group);
+    disposeObject(this.gate.group);
     this.gate = new Gate();
     this.scene.add(this.gate.group);
     this.rink = createRink(this.level.tier >= 3); // ice ads on top-tier arenas
@@ -298,6 +346,7 @@ export class Game {
       this.level.pucks,
     );
     this.elapsed = 0;
+    this.timeBonus = 0;
     this.collisions = 0;
     this.skaterHits = 0;
     this.combo = 0;
@@ -313,9 +362,11 @@ export class Game {
     this.heckleTimer = 4;
     this.powerups.reset();
     this.hud.setCombo(1, 0);
+    this.captureEnvironment();
     this.state = 'playing';
     this.hud.hideFinish();
     this.hud.hideMenu();
+    this.hud.hideSplash();
     this.hud.setLevel(this.level);
     this.hud.setBlade(false);
     this.hud.showToast(`${this.level.name} – gate opening!`);
@@ -346,14 +397,19 @@ export class Game {
     this.activeBoundary = this.parking.bounds;
     this.vehicle.reset(this.parking.startPose.x, this.parking.startPose.z, this.parking.startPose.heading);
     this.vehicle.bladeDown = false;
+    this.captureEnvironment();
     this.elapsed = 0;
     this.shake = 0;
     this.boostMeter = 1;
     this.boosting = false;
+    this.audio.setCrowd(0); // an empty lot at night – no rink crowd murmur
     this.state = 'playing';
     this.hud.hideFinish();
     this.hud.hideMenu();
+    this.hud.hideSplash();
     this.hud.setLevel(this.level);
+    this.hud.setCombo(1, 0); // clear any combo badge left over from a rink run
+    this.hud.setActionHint('DUMP SNOW – press SPACE');
     this.hud.showToast('Dump snow on free stalls — press SPACE!');
     this.syncZamboni();
     this.camPos.set(0, 0, 0);
@@ -403,14 +459,17 @@ export class Game {
     this.state = 'finished';
     const p = this.parking!;
     const res = p.result(this.elapsed);
-    this.audio.finish();
-    this.audio.cheer(1.2);
-    saveStars('parking', res.stars);
+    const success = res.stars > 0;
+    if (success) {
+      this.audio.finish();
+      this.audio.cheer(1.2);
+      saveStars('parking', res.stars);
+    }
     const prevBest = loadLevelBests()['parking'] ?? 0;
-    const isRecord = saveLevelBest('parking', res.total);
+    const isRecord = success && saveLevelBest('parking', res.total);
     if (isRecord && getName()) void submitScore(getName(), careerScore());
     this.hud.showFinish({
-      success: true,
+      success,
       title: res.title,
       coverage: p.total ? p.snowedCount / p.total : 0,
       coverageScore: res.stallScore,
@@ -497,7 +556,7 @@ export class Game {
       this.updateHeckle(dt);
 
       if (this.ice.coverage >= COVERAGE_GOAL) this.finish(true);
-      else if (this.elapsed >= this.level.timeLimit) this.finish(false);
+      else if (this.elapsed >= this.level.timeLimit + this.timeBonus) this.finish(false);
     }
 
     this.shake = Math.max(0, this.shake - dt * 2.2);
@@ -517,7 +576,7 @@ export class Game {
     this.hud.update(
       Math.min(1, this.ice.coverage / COVERAGE_GOAL),
       this.ice.precision,
-      Math.max(0, this.level.timeLimit - this.elapsed),
+      Math.max(0, this.level.timeLimit + this.timeBonus - this.elapsed),
       this.collisions,
       this.skaterHits,
       this.currentScore(),
@@ -539,7 +598,7 @@ export class Game {
   private collectPowerUp(type: PowerType): void {
     this.audio.cheer(0.6);
     if (type === 'time') {
-      this.elapsed = Math.max(0, this.elapsed - POWERUP_TIME_BONUS);
+      this.timeBonus += POWERUP_TIME_BONUS;
       this.hud.popup(`+${POWERUP_TIME_BONUS}s`);
     } else if (type === 'boost') {
       this.boostMeter = 1;
@@ -598,7 +657,9 @@ export class Game {
       }
     }
     this.comboTimer = Math.max(0, this.comboTimer - dt);
-    if (this.comboTimer === 0 && this.multiplier > 1) this.breakCombo();
+    // Any accumulated streak dies with the grace timer – also sub-x2 progress,
+    // which otherwise silently survives long pauses
+    if (this.comboTimer === 0 && this.combo > 0) this.breakCombo();
     this.hud.setCombo(this.multiplier, this.comboTimer / COMBO_GRACE);
 
     // The crowd swells with how much ice is done and how hot the streak is
@@ -606,8 +667,10 @@ export class Game {
   }
 
   private currentScore(): number {
+    // CLOCK pickups pay their bonus back through the effective elapsed time
+    const eff = Math.max(0, this.elapsed - this.timeBonus);
     const time =
-      Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND) * this.ice.coverage;
+      Math.max(0, SCORE_TIME_MAX - eff * SCORE_TIME_PER_SECOND) * this.ice.coverage;
     return (
       this.ice.coverage * SCORE_COVERAGE_MAX +
       this.ice.precision * SCORE_PRECISION_MAX * this.ice.coverage +
@@ -627,7 +690,7 @@ export class Game {
     const coverageScore = this.ice.coverage * SCORE_COVERAGE_MAX;
     const precisionScore = this.ice.precision * SCORE_PRECISION_MAX;
     const timeScore = success
-      ? Math.max(0, SCORE_TIME_MAX - this.elapsed * SCORE_TIME_PER_SECOND)
+      ? Math.max(0, SCORE_TIME_MAX - Math.max(0, this.elapsed - this.timeBonus) * SCORE_TIME_PER_SECOND)
       : 0;
     const flowBonus = Math.round(this.flowBonus);
     const collisionPenalty = this.collisions * SCORE_COLLISION_PENALTY;

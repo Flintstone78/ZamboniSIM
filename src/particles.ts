@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 const MAX = 160; // particle pool size
-const LIFE = 0.6; // seconds
+const LIFE = 0.9; // seconds – long enough for the highest arcs to land
 
 /**
  * Lightweight ice-spray burst thrown up behind the conditioner blade while
@@ -19,6 +19,8 @@ export class IceSpray {
     this.positions = new Float32Array(MAX * 3);
     this.velocities = new Float32Array(MAX * 3);
     this.ages = new Float32Array(MAX).fill(LIFE + 1); // start dead
+    // Park the dead pool out of sight (frustum culling is off)
+    for (let k = 0; k < MAX; k++) this.positions[k * 3 + 1] = -1000;
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
@@ -58,13 +60,18 @@ export class IceSpray {
     for (let k = 0; k < MAX; k++) {
       if (this.ages[k] > LIFE) continue;
       this.ages[k] += dt;
+      if (this.ages[k] > LIFE) {
+        // Expired mid-flight – hide it instead of leaving it frozen in the air
+        this.positions[k * 3 + 1] = -1000;
+        continue;
+      }
       this.velocities[k * 3 + 1] -= 9 * dt; // gravity
       this.positions[k * 3] += this.velocities[k * 3] * dt;
       this.positions[k * 3 + 1] += this.velocities[k * 3 + 1] * dt;
       this.positions[k * 3 + 2] += this.velocities[k * 3 + 2] * dt;
       if (this.positions[k * 3 + 1] < 0.02) {
         this.positions[k * 3 + 1] = 0.02;
-        this.ages[k] = LIFE + 1; // settle and retire
+        this.ages[k] = LIFE + 1; // settle on the ice and retire
       }
     }
     this.points.geometry.attributes.position.needsUpdate = true;

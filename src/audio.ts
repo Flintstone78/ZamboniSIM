@@ -62,6 +62,8 @@ export class AudioEngine {
     if (this.ctx) {
       this.master.gain.setTargetAtTime(this.muted ? 0 : 1, this.ctx.currentTime, 0.05);
     }
+    // TTS heckles run outside WebAudio – cut any announcer mid-sentence too
+    if (this.muted) window.speechSynthesis?.cancel();
     return this.muted;
   }
 
