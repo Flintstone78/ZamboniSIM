@@ -93,38 +93,15 @@ export class Gate {
       this.group.add(light);
     }
 
-    // Tidy board-height caps closing the cut ends of the rink boards
+    // Short board-height posts marking just the two jambs, so the cut board
+    // ends read as a clean doorway. No leaf across the opening – the exit is
+    // wide open, the way the player drives out.
     const edgeMat = new THREE.MeshStandardMaterial({ color: '#e8e8e8', roughness: 0.6 });
     for (const x of [GATE_X_MIN, GATE_X_MAX]) {
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.1, BOARD_HEIGHT, 0.3), edgeMat);
-      cap.position.set(x, BOARD_HEIGHT / 2, this.boardZ);
-      this.group.add(cap);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, BOARD_HEIGHT, 0.3), edgeMat);
+      post.position.set(x, BOARD_HEIGHT / 2, this.boardZ);
+      this.group.add(post);
     }
-
-    // The gate leaf, standing swung wide open into the bay so the boards
-    // clearly read as "open here". White board with a red cap and yellow kick.
-    const leaf = new THREE.Group();
-    const panel = new THREE.Mesh(
-      new THREE.BoxGeometry(width, BOARD_HEIGHT, 0.08),
-      new THREE.MeshStandardMaterial({ color: '#f5f5f5', roughness: 0.55 }),
-    );
-    panel.position.set(-width / 2, BOARD_HEIGHT / 2, 0); // extends from the hinge
-    leaf.add(panel);
-    const leafTop = new THREE.Mesh(
-      new THREE.BoxGeometry(width, 0.1, 0.12),
-      new THREE.MeshStandardMaterial({ color: '#b71c1c', roughness: 0.45 }),
-    );
-    leafTop.position.set(-width / 2, BOARD_HEIGHT, 0);
-    leaf.add(leafTop);
-    const leafKick = new THREE.Mesh(
-      new THREE.BoxGeometry(width, 0.18, 0.1),
-      new THREE.MeshStandardMaterial({ color: '#f2c40f', roughness: 0.6 }),
-    );
-    leafKick.position.set(-width / 2, 0.1, 0);
-    leaf.add(leafKick);
-    leaf.position.set(GATE_X_MAX, 0, this.boardZ); // hinged at the right jamb
-    leaf.rotation.y = -1.7; // swung ~97° back into the bay, clear of the lane
-    this.group.add(leaf);
   }
 
   /** No-op: the bay is always open. */
