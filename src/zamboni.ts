@@ -76,10 +76,10 @@ export function createZamboni(): ZamboniRig {
   blade.castShadow = true;
   group.add(blade);
 
-  // Driver in the rear seat, sat to the left behind the wheel (lives on
-  // `group` so it survives the GLB swap)
+  // Driver sat well back in the black seat at the rear-left: butt on the
+  // cushion against the backrest (z), centred on the chair (x), knees forward.
   const driver = buildDriver();
-  driver.position.set(-0.42, 1.46, -1.4);
+  driver.position.set(-0.35, 1.72, -1.77);
   group.add(driver);
 
   loadModelInto('/assets/zamboni.glb', (model) => {
