@@ -128,10 +128,12 @@ export class Goals {
   private place(e: GoalEntry): void {
     const m = e.mesh;
     const endX = e.side * (RINK_LENGTH / 2 - 0.7);
-    const x = THREE.MathUtils.lerp(e.side * START_X, endX, e.anim);
-    m.position.set(x, Math.sin(e.anim * Math.PI) * 0.5, 0);
+    // Ease in and out so the net is hoisted off and set down, not yanked
+    const t = e.anim * e.anim * (3 - 2 * e.anim);
+    const x = THREE.MathUtils.lerp(e.side * START_X, endX, t);
+    m.position.set(x, Math.sin(t * Math.PI) * 0.5, 0);
     // Mouth faces centre ice; lifts and tilts back onto the boards as it moves
-    m.rotation.set(0, e.side > 0 ? Math.PI : 0, e.anim * (Math.PI / 2 - 0.1));
+    m.rotation.set(0, e.side > 0 ? Math.PI : 0, t * (Math.PI / 2 - 0.1));
   }
 
   /** Animate any goal whose behind-strip has been resurfaced. Returns how many
@@ -184,11 +186,9 @@ export class Goals {
       else n.set(0, 1);
       p.addScaledVector(n, m);
       const vAlongN = -vehicle.velocity.dot(n);
-      if (vAlongN > 0) {
-        vehicle.velocity.addScaledVector(n, vAlongN * 1.1);
-        vehicle.velocity.multiplyScalar(0.4);
-        if (vAlongN > 0.8) return vAlongN;
-      }
+      // n points out of the cage; the wall we're pushing into faces -n. Same
+      // knock-or-grind response as the boards (one scrub per hit, not per step).
+      if (vAlongN > 0 && vehicle.respondToContact(-n.x, -n.y, vAlongN)) return vAlongN;
     }
     return 0;
   }

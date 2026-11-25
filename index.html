@@ -254,6 +254,33 @@
       }
       #finish-overlay button:hover { filter: brightness(1.1); }
 
+      /* Pause menu – shares the results card look */
+      #pause-overlay {
+        position: fixed; inset: 0; display: none; z-index: 30;
+        align-items: center; justify-content: center;
+        background: rgba(4, 8, 14, 0.62); backdrop-filter: blur(3px);
+      }
+      #pause-overlay .card {
+        background: var(--hud-bg); border: 1px solid var(--hud-border);
+        border-radius: 16px; padding: 30px 44px; text-align: center; min-width: 320px;
+      }
+      #pause-overlay h1 { font-size: 30px; margin-bottom: 20px; letter-spacing: 0.06em; }
+      #pause-overlay .buttons { display: flex; gap: 10px; justify-content: center; }
+      #pause-overlay button {
+        pointer-events: auto; cursor: pointer;
+        font: inherit; font-weight: 700; font-size: 16px;
+        color: #06121f; background: var(--accent);
+        border: 0; border-radius: 8px; padding: 12px 26px;
+      }
+      #pause-overlay button.secondary { background: rgba(255,255,255,0.16); color: #e8f1fa; }
+      #pause-overlay button:hover { filter: brightness(1.1); }
+      #pause-overlay .pause-hint { margin-top: 18px; font-size: 12.5px; color: #8fb2d4; }
+
+      /* Visible focus for keyboard and gamepad navigation */
+      button:focus-visible {
+        outline: 3px solid #ffd54f; outline-offset: 3px;
+      }
+
       /* Touch controls (only injected on coarse-pointer devices) */
       #touch-controls {
         position: fixed; inset: 0; pointer-events: none; z-index: 40;
@@ -338,7 +365,7 @@
     <div id="hud-help" class="hud">
       <kbd>W</kbd>/<kbd>S</kbd> throttle/reverse &nbsp; <kbd>A</kbd>/<kbd>D</kbd> steer &nbsp;
       <kbd>SPACE</kbd> blade &nbsp; <kbd>SHIFT</kbd> turbo &nbsp; <kbd>C</kbd> camera &nbsp;
-      <kbd>M</kbd> sound &nbsp; <kbd>R</kbd> restart &nbsp; <kbd>ESC</kbd> menu
+      <kbd>M</kbd> sound &nbsp; <kbd>R</kbd> restart &nbsp; <kbd>ESC</kbd>/<kbd>P</kbd> pause
     </div>
 
     <div id="toast" class="hud"></div>
@@ -362,6 +389,18 @@
           <button id="restart-btn" class="secondary">Play again</button>
           <button id="menu-btn" class="secondary">Menu</button>
         </div>
+      </div>
+    </div>
+
+    <div id="pause-overlay">
+      <div class="card">
+        <h1>Paused</h1>
+        <div class="buttons">
+          <button id="pause-resume">▶ Resume</button>
+          <button id="pause-restart" class="secondary">Restart</button>
+          <button id="pause-menu" class="secondary">Menu</button>
+        </div>
+        <div class="pause-hint"><kbd>ESC</kbd>/<kbd>P</kbd> resume &nbsp; 🎮 Start</div>
       </div>
     </div>
 
@@ -392,7 +431,8 @@
         </div>
         <div id="menu-help">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp;
-          <kbd>SPACE</kbd> blade up/down &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>ESC</kbd> menu
+          <kbd>SPACE</kbd> blade up/down &nbsp; <kbd>C</kbd> camera &nbsp; <kbd>ESC</kbd> pause
+          <br />🎮 Gamepad: stick steers · RT/LT gas/reverse · A blade · RB turbo · Y camera · Start pause
         </div>
       </div>
     </div>

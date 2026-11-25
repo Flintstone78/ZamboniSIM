@@ -20,6 +20,7 @@ const TEX_W = 1024;
 const TEX_H = 512;
 const ROUGH_DIRTY = 168; // canvas grey level for scuffed ice
 const ROUGH_CLEAN = 26; // freshly resurfaced = near-mirror
+const UPLOAD_INTERVAL = 1 / 30; // seconds between GPU uploads of the painted canvases
 
 /**
  * Owns the "freshly resurfaced" state of the ice. Visually this is a canvas
@@ -36,7 +37,8 @@ export class IceResurfacer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly tintCtx: CanvasRenderingContext2D;
   private colorDirty = false;
-  private lastColorFlush = -1;
+  private roughDirty = false;
+  private uploadClock = 0;
   // One strip state per blade (two in co-op)
   private strips: Strip[] = [0, 1].map(() => ({
     prevLeft: new THREE.Vector2(),
@@ -96,7 +98,8 @@ export class IceResurfacer {
     this.tintCtx.clearRect(0, 0, TEX_W, TEX_H);
     this.tintTexture.needsUpdate = true;
     this.colorDirty = false;
-    this.lastColorFlush = -1;
+    this.roughDirty = false;
+    this.uploadClock = 0;
 
     for (const s of this.strips) s.hasPrev = false;
     this.paintableCells = 0;
@@ -121,9 +124,23 @@ export class IceResurfacer {
   /** Call when the blade is lifted (reversing/stopped) to break the strip. */
   liftBlade(strip = 0): void {
     this.strips[strip].hasPrev = false;
-    // Composite any tint still buffered in the throttle window so the last
-    // metre of the wet strip isn't silently dropped
-    if (this.colorDirty) this.flushColor(this.lastColorFlush, true);
+    // Push anything still buffered in the upload window so the last bit of
+    // the strip isn't held back
+    this.flush();
+  }
+
+  /**
+   * Per rendered frame: upload the painted canvases to the GPU at a steady
+   * ~30 Hz, gloss and wet tint together. Painting every simulation step and
+   * uploading once per window keeps the two in sync (the tint used to lag
+   * the gloss at ~7 Hz and grow in visible chunks) for less bandwidth than
+   * re-uploading the roughness map every frame.
+   */
+  present(dt: number): void {
+    this.uploadClock += dt;
+    if (this.uploadClock < UPLOAD_INTERVAL) return;
+    this.uploadClock = 0;
+    this.flush();
   }
 
   /**
@@ -140,12 +157,11 @@ export class IceResurfacer {
     if (s.hasPrev) {
       const g = ROUGH_CLEAN;
       this.fillQuad(this.ctx, s, left, right, `rgb(${g},${g},${g})`);
-      this.texture.needsUpdate = true;
+      this.roughDirty = true;
 
       // Opaque mask – no alpha build-up at the seams between frame quads
       this.fillQuad(this.tintCtx, s, left, right, 'rgb(96, 140, 178)');
       this.colorDirty = true;
-      this.flushColor(time);
 
       this.markGrid(s.prevLeft, s.prevRight, left, right, time);
     }
@@ -241,14 +257,13 @@ export class IceResurfacer {
     return total === 0 ? 1 : painted / total;
   }
 
-  /** Push the wet-strip canvas to the GPU, throttled to ~7 Hz. Just a small
-   *  single-level upload – the markings texture is never touched. */
-  private flushColor(time: number, force = false): void {
-    if (!this.colorDirty) return;
-    if (!force && this.lastColorFlush >= 0 && time - this.lastColorFlush < 0.15) return;
-    this.lastColorFlush = time;
+  /** Upload whichever painted canvases changed (single-level uploads – no
+   *  mip chain – and the markings texture is never touched). */
+  private flush(): void {
+    if (this.roughDirty) this.texture.needsUpdate = true;
+    if (this.colorDirty) this.tintTexture.needsUpdate = true;
+    this.roughDirty = false;
     this.colorDirty = false;
-    this.tintTexture.needsUpdate = true;
   }
 
   private fillQuad(

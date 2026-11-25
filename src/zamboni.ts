@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ZAM_LENGTH, ZAM_WIDTH, SWATH_WIDTH } from './constants';
-import { loadModelInto } from './assets';
+import { loadModelInto, disposeObject } from './assets';
 
 // Yaw applied to the generated GLB so its nose points along local +Z
 // (depends on how the mesh generator oriented it – tuned visually).
@@ -8,6 +8,9 @@ const MODEL_YAW = -Math.PI / 2;
 
 export interface ZamboniRig {
   group: THREE.Group;
+  /** Body pivot (model + driver) that rocks with the cosmetic pitch/roll;
+   *  the blade stays outside it so it always rides flat on the ice. */
+  body: THREE.Group;
   /** The conditioner housing dragged behind – animated up/down with Space. */
   blade: THREE.Mesh;
   /** The seated driver figure (hidden in first-person view). */
@@ -20,8 +23,17 @@ const BLADE_UP_Y = 0.5;
 /** Ease the blade toward its up/down position; call every frame. */
 export function animateBlade(blade: THREE.Mesh, down: boolean, dt: number): void {
   const target = down ? BLADE_DOWN_Y : BLADE_UP_Y;
-  blade.position.y += (target - blade.position.y) * Math.min(1, dt * 8);
+  blade.position.y = target + (blade.position.y - target) * Math.exp(-8 * dt);
   blade.rotation.x = ((blade.position.y - BLADE_DOWN_Y) / (BLADE_UP_Y - BLADE_DOWN_Y)) * 0.35;
+}
+
+/** Rock the body by (pitch, roll) radians. It pivots on the low wheels: the
+ *  body lifts just enough that the lowest corner stays on the ice rather than
+ *  sinking through it. */
+export function tiltBody(rig: ZamboniRig, pitch: number, roll: number): void {
+  rig.body.rotation.set(pitch, 0, roll);
+  rig.body.position.y =
+    Math.abs(Math.sin(pitch)) * (ZAM_LENGTH / 2) + Math.abs(Math.sin(roll)) * (ZAM_WIDTH / 2);
 }
 
 /** A seated driver in a proper hi-vis kit, facing local +Z (origin at the
@@ -99,8 +111,10 @@ function buildDriver(): THREE.Group {
  */
 export function createZamboni(): ZamboniRig {
   const group = new THREE.Group();
+  const body = new THREE.Group(); // tilting pivot for model + driver
+  group.add(body);
   const g = new THREE.Group(); // swappable body
-  group.add(g);
+  body.add(g);
 
   // Conditioner: the blade housing dragged behind, full swath width
   const blade = new THREE.Mesh(
@@ -115,7 +129,7 @@ export function createZamboni(): ZamboniRig {
   // cushion against the backrest (z), centred on the chair (x), knees forward.
   const driver = buildDriver();
   driver.position.set(-0.35, 1.72, -1.77);
-  group.add(driver);
+  body.add(driver);
 
   loadModelInto('/assets/zamboni.glb', (model) => {
     model.traverse((o) => {
@@ -132,8 +146,10 @@ export function createZamboni(): ZamboniRig {
     box.setFromObject(model);
     const center = box.getCenter(new THREE.Vector3());
     model.position.set(-center.x, -box.min.y, -center.z);
+    disposeObject(g); // free the procedural fallback's geometry/materials
     g.clear();
     g.add(model);
+    group.userData.modelLoaded = true;
   });
   const bodyMat = new THREE.MeshStandardMaterial({ color: '#1565c0', roughness: 0.35, metalness: 0.15 });
   const darkMat = new THREE.MeshStandardMaterial({ color: '#1b1f24', roughness: 0.8 });
@@ -217,5 +233,5 @@ export function createZamboni(): ZamboniRig {
   box(0.18, 0.12, 0.05, -W / 2 + 0.25, 0.85, L / 2 + 0.01, lampMat);
   box(0.18, 0.12, 0.05, W / 2 - 0.25, 0.85, L / 2 + 0.01, lampMat);
 
-  return { group, blade, driver };
+  return { group, body, blade, driver };
 }

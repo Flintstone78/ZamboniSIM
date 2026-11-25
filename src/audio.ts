@@ -37,6 +37,8 @@ export class AudioEngine {
   private crowdLevel = 0; // last intensity from setCrowd – gates the whistles
   private whistleTimer = 6;
   private muted = localStorage.getItem('zambonisim.muted') === '1';
+  private paused = false;
+  private noiseCache = new Map<number, AudioBuffer>();
   private heckleVoice: SpeechSynthesisVoice | null = null;
 
   constructor() {
@@ -64,9 +66,7 @@ export class AudioEngine {
   toggleMuted(): boolean {
     this.muted = !this.muted;
     localStorage.setItem('zambonisim.muted', this.muted ? '1' : '0');
-    if (this.ctx) {
-      this.master.gain.setTargetAtTime(this.muted ? 0 : 1, this.ctx.currentTime, 0.05);
-    }
+    this.applyMasterGain();
     // TTS heckles run outside WebAudio – cut any announcer mid-sentence too
     if (this.muted) window.speechSynthesis?.cancel();
     return this.muted;
@@ -303,7 +303,7 @@ export class AudioEngine {
     }
     const ctx = this.ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 1;
+    this.master.gain.value = this.muted || this.paused ? 0 : 1;
     this.master.connect(ctx.destination);
 
     // Engine drone: two detuned saws an octave-and-a-fifth apart
@@ -389,10 +389,29 @@ export class AudioEngine {
     return ctx;
   }
 
+  /** White noise of the given length. Buffers are immutable once played, so
+   *  one per length is shared by every one-shot instead of regenerating
+   *  tens of thousands of samples on each crash, cheer and jeer. */
   private noiseBuffer(ctx: AudioContext, seconds: number): AudioBuffer {
+    const cached = this.noiseCache.get(seconds);
+    if (cached) return cached;
     const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    this.noiseCache.set(seconds, buf);
     return buf;
+  }
+
+  /** Duck everything while the game is paused (and cut any heckle mid-line). */
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (paused) window.speechSynthesis?.cancel();
+    this.applyMasterGain();
+  }
+
+  private applyMasterGain(): void {
+    if (!this.ctx) return;
+    this.master.gain.setTargetAtTime(this.muted || this.paused ? 0 : 1, this.ctx.currentTime, 0.05);
   }
 }

@@ -10,6 +10,7 @@ import {
 } from './constants';
 import { rinkSignedDistance, rinkBoundaryNormal } from './rink';
 import { inGoalZone } from './goals';
+import { BODY_RADIUS, bodySegmentPoint } from './vehicle';
 
 export interface ObstacleEvents {
   /** A standing cone was clipped and tips over. */
@@ -43,6 +44,8 @@ interface Cone {
  */
 export class Obstacles {
   readonly group = new THREE.Group();
+  private readonly scratchContact = new THREE.Vector2();
+  private readonly scratchOffset = new THREE.Vector2();
   private pucks: Puck[] = [];
   private cones: Cone[] = [];
 
@@ -122,17 +125,23 @@ export class Obstacles {
     });
   }
 
-  update(dt: number, vehiclePos: THREE.Vector2, vehicleVel: THREE.Vector2): void {
-    this.updatePucks(dt, vehiclePos, vehicleVel);
+  update(
+    dt: number,
+    vehiclePos: THREE.Vector2,
+    vehicleVel: THREE.Vector2,
+    vehicleHeading = 0,
+  ): void {
+    this.updatePucks(dt, vehiclePos, vehicleVel, vehicleHeading);
     this.updateCones(dt, vehiclePos, vehicleVel);
   }
 
-  /** Nearest active puck to a point (skaters chase these). */
-  nearestPuck(pos: THREE.Vector2): THREE.Vector2 | null {
+  /** Nearest active puck to a point (skaters chase these), skipping any in
+   *  `exclude` – pucks other skaters have already claimed. */
+  nearestPuck(pos: THREE.Vector2, exclude?: Set<THREE.Vector2>): THREE.Vector2 | null {
     let best: THREE.Vector2 | null = null;
     let bestD = Infinity;
     for (const puck of this.pucks) {
-      if (!puck.active) continue;
+      if (!puck.active || exclude?.has(puck.pos)) continue;
       const d = puck.pos.distanceToSquared(pos);
       if (d < bestD) {
         bestD = d;
@@ -158,20 +167,26 @@ export class Obstacles {
     dt: number,
     vehiclePos: THREE.Vector2,
     vehicleVel: THREE.Vector2,
+    vehicleHeading: number,
   ): void {
-    const minDist = ZAM_COLLISION_RADIUS + PUCK_RADIUS;
+    const minDist = BODY_RADIUS + PUCK_RADIUS;
+    const friction = Math.exp(-0.25 * dt);
+    const contact = this.scratchContact;
+    const offset = this.scratchOffset;
     for (const puck of this.pucks) {
       if (!puck.active) continue;
       puck.hitCooldown = Math.max(0, puck.hitCooldown - dt);
 
-      // Shunted by the zamboni: pushed out and sent sliding
-      const offset = puck.pos.clone().sub(vehiclePos);
+      // Shunted by the zamboni's body: pushed out and sent sliding
+      bodySegmentPoint(vehiclePos, vehicleHeading, puck.pos.x, puck.pos.y, contact);
+      offset.copy(puck.pos).sub(contact);
       const dist = offset.length();
       if (dist < minDist) {
-        const n = dist > 1e-4 ? offset.divideScalar(dist) : new THREE.Vector2(1, 0);
-        puck.pos.copy(vehiclePos).addScaledVector(n, minDist);
-        const impulse = Math.max(vehicleVel.dot(n), 0) + 1.2;
-        puck.vel.copy(n).multiplyScalar(impulse);
+        if (dist > 1e-4) offset.divideScalar(dist);
+        else offset.set(Math.sin(vehicleHeading), Math.cos(vehicleHeading));
+        puck.pos.copy(contact).addScaledVector(offset, minDist);
+        const impulse = Math.max(vehicleVel.dot(offset), 0) + 1.2;
+        puck.vel.copy(offset).multiplyScalar(impulse);
         if (puck.hitCooldown === 0) {
           puck.hitCooldown = 0.5;
           this.events.onPuckHit(impulse);
@@ -179,7 +194,7 @@ export class Obstacles {
       }
 
       // Glide with a touch of ice friction, bounce off the boards
-      puck.vel.multiplyScalar(Math.max(0, 1 - 0.25 * dt));
+      puck.vel.multiplyScalar(friction);
       puck.pos.addScaledVector(puck.vel, dt);
       const over = rinkSignedDistance(puck.pos.x, puck.pos.y) + PUCK_RADIUS;
       if (over > 0) {

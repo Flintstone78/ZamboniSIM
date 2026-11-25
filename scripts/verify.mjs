@@ -49,7 +49,7 @@ const result = await page.evaluate(() => {
   out.puckMoved = +Math.hypot(puck.pos.x - before.x, puck.pos.y - before.y).toFixed(2);
 
   // --- Finish: paint the whole rink; overlay, stars + record should appear ---
-  localStorage.removeItem('zambonisim.best');
+  localStorage.removeItem('zambonisim.levelBest');
   localStorage.removeItem('zambonisim.progress');
   g.startLevel('eu4');
   for (let z = -14.5; z <= 14.5; z += 0.5) {
@@ -61,7 +61,7 @@ const result = await page.evaluate(() => {
   out.finishShown = document.getElementById('finish-overlay').style.display;
   out.stars = document.getElementById('finish-stars').textContent;
   out.recordText = document.getElementById('finish-record').textContent;
-  out.bestStored = localStorage.getItem('zambonisim.best');
+  out.bestStored = localStorage.getItem('zambonisim.levelBest');
   out.progressStored = localStorage.getItem('zambonisim.progress');
 
   // --- Restart the same level resets everything ---

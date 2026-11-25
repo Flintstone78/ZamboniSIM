@@ -97,4 +97,19 @@ export function setupTouchControls(input: Input): void {
   });
   makeButton('⚡', 'turbo', () => (input.touchBoost = true), () => (input.touchBoost = false));
   makeButton('BLADE', 'blade', () => input.onTap['Space']?.());
+
+  // Pause (there's no ESC key on a phone) – a small pill under the level name
+  const pause = document.createElement('button');
+  pause.className = 'touch-btn touch-pause';
+  pause.textContent = '❚❚';
+  pause.setAttribute('aria-label', 'Pause');
+  Object.assign(pause.style, {
+    position: 'fixed', top: '58px', left: '50%', transform: 'translateX(-50%)',
+    width: '52px', height: '40px', fontSize: '15px', pointerEvents: 'auto',
+  });
+  pause.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    input.onTap['KeyP']?.();
+  });
+  root.appendChild(pause);
 }

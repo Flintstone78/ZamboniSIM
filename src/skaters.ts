@@ -1,14 +1,22 @@
 import * as THREE from 'three';
-import { RINK_LENGTH, RINK_WIDTH, ZAM_COLLISION_RADIUS } from './constants';
+import { RINK_LENGTH, RINK_WIDTH } from './constants';
 import { rinkSignedDistance, rinkBoundaryNormal } from './rink';
-import { loadModelInto } from './assets';
+import { loadModelInto, disposeObject } from './assets';
+import { BODY_RADIUS, bodySegmentPoint } from './vehicle';
 import type { Obstacles } from './obstacles';
 
 const SKATER_RADIUS = 0.55;
 const MAX_SPEED = 6.5;
-const ACCEL = 9;
+const ACCEL = 14; // m/s² – a real skater cuts hard; the old lag made them unable to dodge
+const DODGE_RANGE = 4.5; // m from the zamboni's predicted path
+const DODGE_LOOKAHEAD = 0.8; // s of zamboni travel the skaters anticipate
+const SEPARATION = 1.7; // m – skaters keep this far apart
+const TURN_RATE = 10; // 1/s heading smoothing (no snapping on bounces)
+const HOP_TIME = 0.45; // s to hop the boards onto the ice
+const SAFE_SPAWN = 7; // m – never pop on right next to the zamboni
 const SKATER_HEIGHT = 1.85; // metres, for normalising the GLB
 const MODEL_YAW = Math.PI; // align the model's facing with travel (+Z)
+const ZERO = new THREE.Vector2();
 const JERSEYS = ['#d32f2f', '#1565c0', '#2e7d32', '#f9a825', '#6a1b9a', '#00838f'];
 
 interface SkaterRig {
@@ -176,6 +184,9 @@ interface Skater {
   shoveCd: number; // debounce stick-handling a puck
   hitCd: number; // debounce bumping the zamboni
   active: boolean;
+  heading: number; // smoothed facing (rad)
+  leanAngle: number; // smoothed body lean into turns
+  hop: number; // 0..1 progress hopping on over the boards
 }
 
 /**
@@ -187,6 +198,10 @@ interface Skater {
 export class Skaters {
   readonly group = new THREE.Group();
   private skaters: Skater[] = [];
+  private readonly claimed = new Set<THREE.Vector2>();
+  private readonly v1 = new THREE.Vector2();
+  private readonly v2 = new THREE.Vector2();
+  private readonly v3 = new THREE.Vector2();
 
   constructor(count = 6) {
     for (let i = 0; i < count; i++) {
@@ -210,6 +225,9 @@ export class Skaters {
         shoveCd: 0,
         hitCd: 0,
         active: false,
+        heading: 0,
+        leanAngle: 0,
+        hop: 1,
       });
     }
 
@@ -228,6 +246,7 @@ export class Skaters {
       });
       for (const s of this.skaters) {
         const clone = model.clone(true);
+        disposeObject(s.lean); // free the procedural figure's textures/geometry
         s.lean.clear();
         s.lean.add(clone);
         s.rig = null; // the procedural stride rig is gone with the old figure
@@ -250,19 +269,27 @@ export class Skaters {
   }
 
   /** Make sure at least `n` players are on the ice; returns how many were just
-   *  sent on (so Game can announce the first one). New ones hop the boards. */
-  ensureActive(n: number): number {
+   *  sent on (so Game can announce the first one). New ones hop the boards –
+   *  on the far side if the zamboni is near their usual spot. */
+  ensureActive(n: number, vehiclePos?: THREE.Vector2): number {
     let added = 0;
     for (let i = 0; i < this.skaters.length && this.activeCount < n; i++) {
       const s = this.skaters[i];
       if (s.active) continue;
+      const x = ((i + 0.5) / this.skaters.length - 0.5) * (RINK_LENGTH - 10);
+      let z = -RINK_WIDTH / 2 + 2;
+      if (vehiclePos && Math.hypot(vehiclePos.x - x, vehiclePos.y - z) < SAFE_SPAWN) z = -z;
+      if (vehiclePos && Math.hypot(vehiclePos.x - x, vehiclePos.y - z) < SAFE_SPAWN) continue; // try later
       s.active = true;
       s.group.visible = true;
-      s.pos.set(((i + 0.5) / this.skaters.length - 0.5) * (RINK_LENGTH - 10), -RINK_WIDTH / 2 + 2);
-      s.vel.set(0, 0);
+      s.pos.set(x, z);
+      s.vel.set(0, z < 0 ? 1.5 : -1.5); // push off the boards toward centre ice
+      s.heading = Math.atan2(s.vel.x, s.vel.y);
+      s.leanAngle = 0;
+      s.hop = 0;
       s.retarget = 0;
       s.shoveCd = 0;
-      s.hitCd = 0;
+      s.hitCd = HOP_TIME; // can't be "hit" mid-hop
       added++;
     }
     return added;
@@ -272,18 +299,39 @@ export class Skaters {
    * Advance the skaters, let them stick-handle pucks, and resolve collisions
    * with the zamboni. Returns the impact speed of a fresh bump, else 0.
    */
-  update(dt: number, vehiclePos: THREE.Vector2, obstacles: Obstacles): number {
+  update(
+    dt: number,
+    vehiclePos: THREE.Vector2,
+    obstacles: Obstacles,
+    vehicleVel: THREE.Vector2 = ZERO,
+    vehicleHeading = 0,
+  ): number {
     let impact = 0;
+    const claimed = this.claimed;
+    claimed.clear();
+    const desired = this.v1;
+    const tmp = this.v2;
+    const contact = this.v3;
+    // Where the zamboni is heading over the next moment – skaters dodge that
+    // whole stretch, not just its current spot
+    const ax = vehiclePos.x;
+    const az = vehiclePos.y;
+    const bx = ax + vehicleVel.x * DODGE_LOOKAHEAD;
+    const bz = az + vehicleVel.y * DODGE_LOOKAHEAD;
+    const segLenSq = (bx - ax) ** 2 + (bz - az) ** 2;
+
     for (const s of this.skaters) {
       if (!s.active) continue;
       s.shoveCd = Math.max(0, s.shoveCd - dt);
       s.hitCd = Math.max(0, s.hitCd - dt);
       s.retarget -= dt;
+      if (s.hop < 1) s.hop = Math.min(1, s.hop + dt / HOP_TIME);
 
-      // Aim for the nearest loose puck; otherwise wander
-      const puck = obstacles.nearestPuck(s.pos);
+      // Each player chases their own nearest loose puck; otherwise wander
+      const puck = obstacles.nearestPuck(s.pos, claimed);
       if (puck && s.shoveCd === 0) {
         s.target.copy(puck);
+        claimed.add(puck);
       } else if (s.retarget <= 0) {
         s.target.set(
           (Math.random() - 0.5) * (RINK_LENGTH - 10),
@@ -292,14 +340,34 @@ export class Skaters {
         s.retarget = 1.5 + Math.random() * 2;
       }
 
-      const desired = s.target.clone().sub(s.pos);
-      if (desired.lengthSq() > 1e-4) desired.normalize().multiplyScalar(MAX_SPEED);
-      // Politely swerve around the zamboni so a clean run stays possible
-      const away = s.pos.clone().sub(vehiclePos);
-      const near = away.length();
-      if (near < 4 && near > 1e-4) desired.addScaledVector(away.divideScalar(near), MAX_SPEED * (4 - near) * 0.5);
+      desired.copy(s.target).sub(s.pos);
+      if (desired.lengthSq() > 1e-4) desired.setLength(MAX_SPEED);
 
-      s.vel.addScaledVector(desired.sub(s.vel), Math.min(1, (ACCEL / MAX_SPEED) * dt));
+      // Politely swerve around the zamboni's path so a clean run stays possible
+      const t = segLenSq > 1e-6
+        ? THREE.MathUtils.clamp(((s.pos.x - ax) * (bx - ax) + (s.pos.y - az) * (bz - az)) / segLenSq, 0, 1)
+        : 0;
+      tmp.set(s.pos.x - (ax + (bx - ax) * t), s.pos.y - (az + (bz - az) * t));
+      const near = tmp.length();
+      if (near < DODGE_RANGE && near > 1e-4) {
+        desired.addScaledVector(tmp.divideScalar(near), MAX_SPEED * (DODGE_RANGE - near) * 0.6);
+      }
+
+      // ...and around each other instead of skating through teammates
+      for (const o of this.skaters) {
+        if (o === s || !o.active) continue;
+        tmp.copy(s.pos).sub(o.pos);
+        const d = tmp.length();
+        if (d < SEPARATION && d > 1e-4) {
+          desired.addScaledVector(tmp.divideScalar(d), (MAX_SPEED * (SEPARATION - d)) / SEPARATION);
+        }
+      }
+
+      // Accelerate toward the desired velocity with a real cap on how hard
+      tmp.copy(desired).sub(s.vel);
+      const maxDv = ACCEL * dt;
+      if (tmp.lengthSq() > maxDv * maxDv) tmp.setLength(maxDv);
+      s.vel.add(tmp);
       if (s.vel.length() > MAX_SPEED) s.vel.setLength(MAX_SPEED);
       s.pos.addScaledVector(s.vel, dt);
 
@@ -319,28 +387,39 @@ export class Skaters {
         if (vN > 0) s.vel.addScaledVector(n, -1.5 * vN);
       }
 
-      // Bump the zamboni
-      const off = s.pos.clone().sub(vehiclePos);
+      // Bump the zamboni's body (a capsule, not one big circle)
+      bodySegmentPoint(vehiclePos, vehicleHeading, s.pos.x, s.pos.y, contact);
+      const off = tmp.copy(s.pos).sub(contact);
       const d = off.length();
-      const minD = ZAM_COLLISION_RADIUS + SKATER_RADIUS;
-      if (d < minD && d > 1e-4) {
+      const minD = BODY_RADIUS + SKATER_RADIUS;
+      if (d < minD && d > 1e-4 && s.hop >= 1) {
         const n = off.divideScalar(d);
-        s.pos.copy(vehiclePos).addScaledVector(n, minD);
-        s.vel.addScaledVector(n, MAX_SPEED); // knocked back
+        s.pos.copy(contact).addScaledVector(n, minD);
+        s.vel.addScaledVector(n, MAX_SPEED * 0.8); // knocked back
         if (s.hitCd === 0) {
           s.hitCd = 1.5;
           impact = Math.max(impact, 1);
         }
       }
 
-      // Render: stand on the ice, face travel direction, lean into the turn
-      s.group.position.set(s.pos.x, 0, s.pos.y);
-      if (s.vel.lengthSq() > 0.05) s.group.rotation.y = Math.atan2(s.vel.x, s.vel.y);
-      s.lean.rotation.z = THREE.MathUtils.clamp(-s.vel.length() * 0.04, -0.3, 0.3);
+      // Render: face the travel direction smoothly (no snapping on bounces)
+      // and lean into turns by how hard they're carving
+      const speed = s.vel.length();
+      const before = s.heading;
+      if (speed > 0.25) {
+        const want = Math.atan2(s.vel.x, s.vel.y);
+        const diff = Math.atan2(Math.sin(want - s.heading), Math.cos(want - s.heading));
+        s.heading += diff * (1 - Math.exp(-TURN_RATE * dt));
+      }
+      const yawRate = (s.heading - before) / dt;
+      const leanTarget = THREE.MathUtils.clamp(-yawRate * speed * 0.06, -0.38, 0.38);
+      s.leanAngle = leanTarget + (s.leanAngle - leanTarget) * Math.exp(-8 * dt);
+      s.group.position.set(s.pos.x, Math.sin(Math.PI * s.hop) * 0.55, s.pos.y);
+      s.group.rotation.y = s.heading;
+      s.lean.rotation.z = s.leanAngle;
 
       // Skating stride: swing the hip pivots with speed, settle when gliding
       if (s.rig) {
-        const speed = s.vel.length();
         s.phase += dt * (2.2 + speed * 1.6);
         const amp = Math.min(0.55, speed * 0.12);
         const swing = Math.sin(s.phase) * amp;

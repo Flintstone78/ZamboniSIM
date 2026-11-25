@@ -41,6 +41,7 @@ export interface HudCallbacks {
   onSelectLevel: (id: string) => void;
   onStandard: (standard: RinkStandard) => void;
   onPlay: () => void;
+  onResume: () => void;
 }
 
 const starString = (n: number): string => '★'.repeat(n) + '☆'.repeat(3 - n);
@@ -65,6 +66,7 @@ export class Hud {
   private finishOverlay = el('finish-overlay');
   private menuOverlay = el('menu-overlay');
   private splashOverlay = el('splash-overlay');
+  private pauseOverlay = el('pause-overlay');
   private minimapCtx = el<HTMLCanvasElement>('minimap').getContext('2d')!;
   private toastTimer = 0;
 
@@ -75,6 +77,9 @@ export class Hud {
     el('restart-btn').addEventListener('click', callbacks.onRestart);
     el('menu-btn').addEventListener('click', callbacks.onMenu);
     el('next-btn').addEventListener('click', callbacks.onNext);
+    el('pause-resume').addEventListener('click', callbacks.onResume);
+    el('pause-restart').addEventListener('click', callbacks.onRestart);
+    el('pause-menu').addEventListener('click', callbacks.onMenu);
     el<HTMLImageElement>('splash-img').src = this.coverUrl;
     el('splash-play').addEventListener('click', callbacks.onPlay);
     // Tint the level-select menu with a darkened cover for cohesion
@@ -190,18 +195,16 @@ export class Hud {
 
   /** Show the live combo multiplier (hidden at x1) and its decay bar (0..1). */
   setCombo(multiplier: number, fill: number): void {
-    if (multiplier <= 1) {
-      this.combo.style.opacity = '0';
-      return;
-    }
-    this.combo.style.opacity = '1';
-    this.comboMult.textContent = `x${multiplier}`;
-    this.comboBar.style.width = `${Math.max(0, Math.min(1, fill)) * 100}%`;
+    const shown = multiplier > 1 ? '1' : '0';
+    if (this.combo.style.opacity !== shown) this.combo.style.opacity = shown;
+    if (multiplier <= 1) return;
+    this.setText(this.comboMult, `x${multiplier}`);
+    this.setWidth(this.comboBar, `${(Math.max(0, Math.min(1, fill)) * 100).toFixed(1)}%`);
   }
 
   /** Turbo reserve bar (0..1) and whether it's currently firing. */
   setBoost(meter: number, active: boolean): void {
-    this.boostFill.style.width = `${Math.max(0, Math.min(1, meter)) * 100}%`;
+    this.setWidth(this.boostFill, `${(Math.max(0, Math.min(1, meter)) * 100).toFixed(1)}%`);
     this.boostEl.classList.toggle('active', active);
     this.boostEl.classList.toggle('low', meter < 0.15);
   }
@@ -227,6 +230,20 @@ export class Hud {
     this.bladeValue.classList.remove('down');
   }
 
+  // The HUD refreshes every frame; only touch the DOM when a value changes
+  private textCache = new WeakMap<HTMLElement, string>();
+  private widthCache = new WeakMap<HTMLElement, string>();
+  private setText(e: HTMLElement, v: string): void {
+    if (this.textCache.get(e) === v) return;
+    this.textCache.set(e, v);
+    e.textContent = v;
+  }
+  private setWidth(e: HTMLElement, v: string): void {
+    if (this.widthCache.get(e) === v) return;
+    this.widthCache.set(e, v);
+    e.style.width = v;
+  }
+
   update(
     coverage: number,
     precision: number,
@@ -236,25 +253,25 @@ export class Hud {
     score: number,
     speedMs: number,
   ): void {
-    this.progressPct.textContent = `${(coverage * 100).toFixed(1)}%`;
-    this.progressFill.style.width = `${(coverage * 100).toFixed(1)}%`;
+    this.setText(this.progressPct, `${(coverage * 100).toFixed(1)}%`);
+    this.setWidth(this.progressFill, `${(coverage * 100).toFixed(1)}%`);
     const m = Math.floor(timeLeftSeconds / 60);
     const s = Math.floor(timeLeftSeconds % 60);
-    this.timeValue.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+    this.setText(this.timeValue, `${m}:${s.toString().padStart(2, '0')}`);
     this.timeValue.classList.toggle('low', timeLeftSeconds < 30);
-    this.precisionValue.textContent = `${Math.round(precision * 100)}%`;
-    this.collisionValue.textContent = `${collisions}`;
-    this.coneValue.textContent = `${coneHits}`;
-    this.scoreValue.textContent = `${Math.max(0, Math.round(score))} pts`;
-    this.speedValue.textContent = `${Math.round(Math.abs(speedMs) * 3.6)}`;
+    this.setText(this.precisionValue, `${Math.round(precision * 100)}%`);
+    this.setText(this.collisionValue, `${collisions}`);
+    this.setText(this.coneValue, `${coneHits}`);
+    this.setText(this.scoreValue, `${Math.max(0, Math.round(score))} pts`);
+    this.setText(this.speedValue, `${Math.round(Math.abs(speedMs) * 3.6)}`);
   }
 
   /** Restore the rink HUD labels (after a parking round). */
   setRinkLabels(): void {
-    this.progressLabel.textContent = 'Resurfaced';
-    this.statLabel1.textContent = 'Time';
-    this.statLabel2.textContent = 'Precision';
-    this.statLabel3.textContent = 'Crashes';
+    this.setText(this.progressLabel, 'Resurfaced');
+    this.setText(this.statLabel1, 'Time');
+    this.setText(this.statLabel2, 'Precision');
+    this.setText(this.statLabel3, 'Crashes');
     this.statRow4.style.display = '';
   }
 
@@ -268,21 +285,21 @@ export class Hud {
     score: number,
     speedMs: number,
   ): void {
-    this.progressLabel.textContent = 'Snowed stalls';
-    this.statLabel1.textContent = 'Time';
-    this.statLabel2.textContent = 'Cars';
-    this.statLabel3.textContent = 'Crashes';
-    this.statRow4.style.display = 'none';
-    this.progressPct.textContent = `${snowed} / ${total}`;
-    this.progressFill.style.width = `${(total ? snowed / total : 0) * 100}%`;
+    this.setText(this.progressLabel, 'Snowed stalls');
+    this.setText(this.statLabel1, 'Time');
+    this.setText(this.statLabel2, 'Cars');
+    this.setText(this.statLabel3, 'Crashes');
+    if (this.statRow4.style.display !== 'none') this.statRow4.style.display = 'none';
+    this.setText(this.progressPct, `${snowed} / ${total}`);
+    this.setWidth(this.progressFill, `${(total ? snowed / total : 0) * 100}%`);
     const m = Math.floor(timeLeftSeconds / 60);
     const s = Math.floor(timeLeftSeconds % 60);
-    this.timeValue.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+    this.setText(this.timeValue, `${m}:${s.toString().padStart(2, '0')}`);
     this.timeValue.classList.toggle('low', timeLeftSeconds < 15);
-    this.precisionValue.textContent = `${cars}`;
-    this.collisionValue.textContent = `${crashes}`;
-    this.scoreValue.textContent = `${Math.max(0, Math.round(score))} pts`;
-    this.speedValue.textContent = `${Math.round(Math.abs(speedMs) * 3.6)}`;
+    this.setText(this.precisionValue, `${cars}`);
+    this.setText(this.collisionValue, `${crashes}`);
+    this.setText(this.scoreValue, `${Math.max(0, Math.round(score))} pts`);
+    this.setText(this.speedValue, `${Math.round(Math.abs(speedMs) * 3.6)}`);
   }
 
   /** Let a level draw its own minimap (e.g. the parking-lot stall map). */
@@ -356,5 +373,52 @@ export class Hud {
 
   hideFinish(): void {
     this.finishOverlay.style.display = 'none';
+  }
+
+  showPause(): void {
+    this.pauseOverlay.style.display = 'flex';
+    el<HTMLButtonElement>('pause-resume').focus({ preventScroll: true });
+  }
+
+  hidePause(): void {
+    this.pauseOverlay.style.display = 'none';
+    if (this.pauseOverlay.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+  }
+
+  /** The overlay currently taking input, if any (topmost first). */
+  private activeOverlay(): HTMLElement | null {
+    for (const o of [this.pauseOverlay, this.finishOverlay, this.menuOverlay, this.splashOverlay]) {
+      if (o.style.display === 'flex') return o;
+    }
+    return null;
+  }
+
+  /** Move keyboard/gamepad focus to the next (+1) or previous (−1) button of
+   *  the open overlay. Returns false when no overlay is open. */
+  moveFocus(dir: 1 | -1): boolean {
+    const root = this.activeOverlay();
+    if (!root) return false;
+    const items = [...root.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')].filter(
+      (b) => b.offsetParent !== null,
+    );
+    if (items.length === 0) return true;
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = i < 0 ? (dir > 0 ? items[0] : items[items.length - 1]) : items[(i + dir + items.length) % items.length];
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: 'nearest' });
+    return true;
+  }
+
+  /** Press the focused overlay button (gamepad A). Returns true if handled. */
+  confirmFocus(): boolean {
+    const root = this.activeOverlay();
+    if (!root) return false;
+    const a = document.activeElement;
+    if (a instanceof HTMLButtonElement && root.contains(a)) {
+      a.click();
+      return true;
+    }
+    this.moveFocus(1); // nothing focused yet – highlight the first choice
+    return true;
   }
 }

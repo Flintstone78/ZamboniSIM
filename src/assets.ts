@@ -93,15 +93,22 @@ export function loadModelInto(
     ({ GLTFLoader }) => {
       new GLTFLoader().load(
         assetUrl(url),
-        (gltf) => apply(gltf.scene),
+        (gltf) => {
+          try {
+            apply(gltf.scene);
+          } catch (err) {
+            console.warn(`[assets] could not apply ${url}:`, err);
+          }
+        },
         undefined,
-        () => {
-          /* asset missing – keep the procedural model */
+        (err) => {
+          // Asset missing or unreadable – keep the procedural model
+          console.warn(`[assets] ${url} not loaded, using procedural fallback:`, err);
         },
       );
     },
-    () => {
-      /* chunk failed to load (offline?) – keep the procedural model */
+    (err) => {
+      console.warn('[assets] GLTF loader chunk failed to load:', err);
     },
   );
 }
