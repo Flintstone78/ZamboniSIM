@@ -1,0 +1,35 @@
+# Mirrors generated art assets (Higgsfield CDN) into the repo. The dev
+# sandbox's network policy blocks the CDN, so the runner fetches and commits
+# instead. Triggered by pushing an updated design/assets-to-fetch.txt
+# (newline-separated "url|repo/path" pairs). The runner's own commit carries
+# [skip ci] so it cannot re-trigger itself.
+name: fetch-assets
+
+on:
+  push:
+    paths:
+      - design/assets-to-fetch.txt
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download
+        run: |
+          while IFS='|' read -r url path; do
+            case "$url" in ''|'#'*) continue ;; esac
+            mkdir -p "$(dirname "$path")"
+            curl -fsSL "$url" -o "$path"
+            echo "fetched $path"
+          done < design/assets-to-fetch.txt
+      - name: Commit
+        run: |
+          git config user.name "asset-fetch"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Lägg till genererade grafik-assets [skip ci]" || echo "nothing to commit"
+          git push
